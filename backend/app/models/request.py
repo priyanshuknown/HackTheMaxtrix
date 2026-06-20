@@ -55,12 +55,19 @@ class FundingRequest(Base):
 
     # Urgency fields
     urgency_level: Mapped[str] = mapped_column(String(10), nullable=True)
+    urgency_reasons_json: Mapped[str] = mapped_column(Text, nullable=True, default="[]")
     review_flag: Mapped[bool] = mapped_column(Boolean, default=False)
-
+    
+    # Fraud & Impact fields
+    fraud_score: Mapped[int] = mapped_column(Integer, nullable=True)
+    fraud_reasons_json: Mapped[str] = mapped_column(Text, nullable=True, default="[]")
+    impact_score: Mapped[int] = mapped_column(Integer, nullable=True)
+    impact_reasons_json: Mapped[str] = mapped_column(Text, nullable=True, default="[]")
+    
     # Status tracking
     status: Mapped[str] = mapped_column(String(20), default="submitted")
     academic_year: Mapped[str] = mapped_column(String(10), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, index=True)
 
     __table_args__ = (
         # CORE RULE 1: Database-level enforcement of Rs.2000 minimum

@@ -33,7 +33,7 @@ async def verify_document(file_path: str) -> dict:
         return _mock_verify(file_path)
 
 
-async def _extract_text(file_path: str) -> str | None:
+async def extract_text(file_path: str) -> str | None:
     """Extract text from document using Tesseract OCR."""
     try:
         import pytesseract

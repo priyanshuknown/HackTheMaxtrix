@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = "../uploads"
     REPORTS_DIR: str = "../reports"
 
+    # Security
+    PRODUCTION_DOMAINS: list[str] = [
+        "http://localhost:5173",
+        "http://localhost:3000",
+    ]
+
     # Core business rules
     MIN_REQUEST_AMOUNT: int = 2000
     MAX_REQUESTS_PER_YEAR: int = 2

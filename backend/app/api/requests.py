@@ -12,7 +12,7 @@ import os
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status, Request
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -28,6 +28,7 @@ from app.schemas.request import (
 )
 from app.middleware.auth import get_current_user, require_role
 from app.config import settings
+from app.utils.limiter import limiter
 
 router = APIRouter(prefix="/requests", tags=["Funding Requests"])
 
@@ -41,7 +42,9 @@ def _get_current_academic_year() -> str:
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
+@limiter.limit("10/minute")
 async def create_request(
+    request: Request,
     category: str = Form(...),
     amount: int = Form(...),
     description: str = Form(...),
@@ -109,20 +112,34 @@ async def create_request(
             ),
         )
 
-    # Handle file upload
+    # Handle file upload with strict validation
     document_url = None
     if document:
+        # File Validation
+        allowed_extensions = {".pdf", ".jpg", ".jpeg", ".png"}
+        file_ext = os.path.splitext(document.filename)[1].lower() if document.filename else ".pdf"
+        
+        if file_ext not in allowed_extensions:
+            raise HTTPException(status_code=400, detail="Invalid file extension. Only PDF, JPG, PNG allowed.")
+            
+        if document.content_type not in ["application/pdf", "image/jpeg", "image/png"]:
+            raise HTTPException(status_code=400, detail="Invalid MIME type.")
+            
+        content = await document.read()
+        
+        # Limit to 5MB
+        if len(content) > 5 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="File too large. Maximum 5MB.")
+            
         upload_dir = os.path.abspath(settings.UPLOAD_DIR)
         os.makedirs(upload_dir, exist_ok=True)
-        file_ext = os.path.splitext(document.filename)[1] if document.filename else ".pdf"
         file_name = f"{uuid.uuid4().hex}{file_ext}"
         file_path = os.path.join(upload_dir, file_name)
 
-        content = await document.read()
         with open(file_path, "wb") as f:
             f.write(content)
 
-        document_url = f"/uploads/{file_name}"
+        document_url = f"/api/files/{file_name}"
 
     # Parse deadline date
     from datetime import date as date_type

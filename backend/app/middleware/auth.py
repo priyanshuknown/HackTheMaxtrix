@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 from sqlalchemy import select
@@ -31,18 +31,29 @@ def create_access_token(data: dict) -> str:
 
 
 async def get_current_user(
-    credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)],
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> User:
-    """Extract and validate JWT token, return the authenticated User."""
+    """Extract and validate JWT token from HttpOnly cookie or Header, return User."""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Invalid or expired token",
         headers={"WWW-Authenticate": "Bearer"},
     )
+    
+    token = request.cookies.get("access_token")
+    if not token or not token.startswith("Bearer "):
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header
+        else:
+            raise credentials_exception
+
+    actual_token = token.split("Bearer ")[1]
+
     try:
         payload = jwt.decode(
-            credentials.credentials,
+            actual_token,
             settings.JWT_SECRET,
             algorithms=[settings.JWT_ALGORITHM],
         )

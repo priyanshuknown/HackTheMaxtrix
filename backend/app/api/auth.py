@@ -3,7 +3,7 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +14,8 @@ from app.models.funder import Funder
 from app.schemas.auth import RegisterRequest, LoginRequest, TokenResponse
 from app.services.auth_service import hash_password, verify_password
 from app.middleware.auth import create_access_token
+from app.utils.limiter import limiter
+from fastapi import Request
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -30,7 +32,8 @@ def _get_current_academic_year() -> str:
 
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-async def register(data: RegisterRequest, db: Annotated[AsyncSession, Depends(get_db)]):
+@limiter.limit("5/minute")
+async def register(request: Request, data: RegisterRequest, response: Response, db: Annotated[AsyncSession, Depends(get_db)]):
     """Register a new user with role-specific profile creation."""
 
     # Check if email already exists
@@ -83,7 +86,17 @@ async def register(data: RegisterRequest, db: Annotated[AsyncSession, Depends(ge
         db.add(funder)
 
     # Generate JWT token
+    from app.config import settings
     token = create_access_token({"sub": str(user.id), "role": user.role})
+    
+    response.set_cookie(
+        key="access_token",
+        value=f"Bearer {token}",
+        httponly=True,
+        secure=True,
+        samesite="strict",
+        max_age=settings.JWT_EXPIRY_HOURS * 3600
+    )
 
     return TokenResponse(
         access_token=token,
@@ -94,7 +107,8 @@ async def register(data: RegisterRequest, db: Annotated[AsyncSession, Depends(ge
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(data: LoginRequest, db: Annotated[AsyncSession, Depends(get_db)]):
+@limiter.limit("10/minute")
+async def login(request: Request, data: LoginRequest, response: Response, db: Annotated[AsyncSession, Depends(get_db)]):
     """Authenticate user and return JWT token."""
 
     result = await db.execute(select(User).where(User.email == data.email))
@@ -106,7 +120,17 @@ async def login(data: LoginRequest, db: Annotated[AsyncSession, Depends(get_db)]
             detail="Invalid email or password",
         )
 
+    from app.config import settings
     token = create_access_token({"sub": str(user.id), "role": user.role})
+    
+    response.set_cookie(
+        key="access_token",
+        value=f"Bearer {token}",
+        httponly=True,
+        secure=True,
+        samesite="strict",
+        max_age=settings.JWT_EXPIRY_HOURS * 3600
+    )
 
     return TokenResponse(
         access_token=token,
@@ -114,3 +138,8 @@ async def login(data: LoginRequest, db: Annotated[AsyncSession, Depends(get_db)]
         user_id=str(user.id),
         full_name=user.full_name,
     )
+
+@router.post("/logout")
+async def logout(response: Response):
+    response.delete_cookie("access_token", httponly=True, secure=True, samesite="strict")
+    return {"message": "Logged out successfully"}

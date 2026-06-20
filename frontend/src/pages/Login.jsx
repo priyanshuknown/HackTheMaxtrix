@@ -20,7 +20,7 @@ export default function Login() {
     try {
       const data = await login(email, password);
       toast.success(`Welcome back, ${data.full_name}!`);
-      const routes = { student: '/student/dashboard', funder: '/funder/dashboard', admin: '/funder/dashboard' };
+      const routes = { student: '/student/dashboard', funder: '/funder/dashboard', admin: '/admin/dashboard' };
       navigate(routes[data.role] || '/');
     } catch (err) {
       setError(err.response?.data?.detail || 'Login failed');
@@ -73,7 +73,7 @@ export default function Login() {
             <div className="flex gap-2">
               {[
                 { label: 'Student', email: 'aarav@student.edu', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' },
-                { label: 'Funder', email: 'csr@techcorp.in', cls: 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100' },
+                { label: 'Funder', email: 'funder1@vidyafund.ai', cls: 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100' },
                 { label: 'Admin', email: 'admin@vidyafund.ai', cls: 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100' },
               ].map((d) => (
                 <button key={d.email} type="button"

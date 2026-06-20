@@ -1,5 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
@@ -8,10 +10,10 @@ import {
   Wallet, Star, FileText, MessageSquare, BarChart2, Users,
   Settings, HelpCircle, Heart, ArrowUpRight, ChevronDown,
   Share2, IndianRupee, HandHeart, ShieldCheck, Clock, Zap,
-  CheckCircle2, Eye, MoreVertical, BookOpen, Award, Wrench, Plane
+  CheckCircle2, Eye, MoreVertical, BookOpen, Award, Wrench, Plane, Map, Plus
 } from 'lucide-react';
 import {
-  PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer
+  PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip
 } from 'recharts';
 
 const PIE_COLORS = ['#3B82F6', '#8B5CF6', '#10B981', '#F59E0B'];
@@ -23,46 +25,29 @@ const CAT_META = {
   interview_travel: { icon: Plane, label: 'Interview Travel', color: 'text-emerald-600', bg: 'bg-emerald-50' },
 };
 
-const STATUS_COLORS = {
-  submitted: { text: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-200' },
-  verified: { text: 'text-purple-600', bg: 'bg-purple-50', border: 'border-purple-200' },
-  matched: { text: 'text-cyan-600', bg: 'bg-cyan-50', border: 'border-cyan-200' },
-  disbursed: { text: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200' },
-  completed: { text: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200' },
-  rejected: { text: 'text-red-600', bg: 'bg-red-50', border: 'border-red-200' },
-};
-
 export default function FunderDashboard() {
-  const [requests, setRequests] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState({});
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
-  useEffect(() => { fetchRequests(); }, []);
-
-  async function fetchRequests() {
-    try {
-      const res = await api.get('/requests');
-      setRequests(Array.isArray(res.data) ? res.data : []);
-    } catch (err) {
-      toast.error('Failed to load requests');
-      setRequests([]);
-    } finally {
-      setLoading(false);
+  const { data: requests = [], isLoading: loading } = useQuery({
+    queryKey: ['requests'],
+    queryFn: async () => {
+      try {
+        const res = await api.get('/requests');
+        return Array.isArray(res.data) ? res.data : [];
+      } catch (err) {
+        toast.error('Failed to load requests');
+        return [];
+      }
     }
-  }
+  });
 
   async function handleAction(id, type) {
     setActionLoading(p => ({ ...p, [`${type}_${id}`]: true }));
     try {
-      if (type === 'verify') {
-        await api.post(`/verify/${id}`);
-        toast.success('Request verified!');
-      } else if (type === 'match') {
-        const res = await api.get(`/match/${id}`);
-        toast.success(`Matched with ${res.data.matches?.length || 0} funders!`);
-      } else if (type === 'approve') {
+      if (type === 'approve') {
         const matchRes = await api.get(`/match/${id}`);
         const topMatch = matchRes.data.matches?.[0];
         if (!topMatch) throw new Error('No matches found');
@@ -77,7 +62,7 @@ export default function FunderDashboard() {
         const res = await api.get(`/impact/${id}`);
         if (res.data.report_url) window.open(`http://localhost:8000${res.data.report_url}`, '_blank');
       }
-      fetchRequests();
+      queryClient.invalidateQueries({ queryKey: ['requests'] });
     } catch (err) {
       toast.error(err.response?.data?.detail || err.message || 'Action failed');
     } finally {
@@ -85,269 +70,210 @@ export default function FunderDashboard() {
     }
   }
 
-  const totalReq = requests.length;
-  const pendingReq = requests.filter(r => r.status === 'submitted').length;
-  const verifiedReq = requests.filter(r => r.status === 'verified').length;
-  const fundedReq = requests.filter(r => ['disbursed', 'completed'].includes(r.status)).length;
   const totalDisbursed = requests.filter(r => ['disbursed', 'completed'].includes(r.status)).reduce((s, r) => s + (r.amount || 0), 0);
+  const studentsHelped = requests.filter(r => ['disbursed', 'completed'].includes(r.status)).length;
+  const verifiedRequests = requests.filter(r => r.status === 'verified');
 
   const pieData = [
-    { name: 'Education', value: 45 },
-    { name: 'Health', value: 25 },
-    { name: 'Technology', value: 15 },
-    { name: 'Others', value: 15 },
+    { name: 'Exam Fees', value: 40 },
+    { name: 'Certifications', value: 30 },
+    { name: 'Devices', value: 20 },
+    { name: 'Travel', value: 10 },
+  ];
+  
+  const barData = [
+    { name: 'Jan', impact: 40 },
+    { name: 'Feb', impact: 30 },
+    { name: 'Mar', impact: 20 },
+    { name: 'Apr', impact: 27 },
+    { name: 'May', impact: 18 },
+    { name: 'Jun', impact: 23 },
   ];
 
   if (loading) return (
     <div className="flex items-center justify-center h-screen bg-slate-50">
-      <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+      <div className="w-8 h-8 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
     </div>
   );
 
   return (
-    <div className="flex h-screen bg-[#F8FAFC] text-slate-900 overflow-hidden">
+    <div className="flex h-screen bg-slate-50 text-slate-900 overflow-hidden font-sans">
       
       {/* ── Sidebar ── */}
-      <aside className="sidebar">
-        <div className="p-5 flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center">
-            <Sparkles size={14} className="text-white" />
+      <aside className="w-64 bg-slate-900 text-white flex flex-col hidden md:flex">
+        <div className="p-6 flex items-center gap-3 border-b border-slate-800">
+          <div className="w-8 h-8 rounded-lg bg-indigo-500 flex items-center justify-center shadow-md">
+            <Heart size={16} className="text-white" />
           </div>
-          <span className="font-bold text-base" style={{ fontFamily: "'Outfit', sans-serif" }}>VidyaFund AI</span>
+          <span className="font-bold text-lg tracking-tight">VidyaFund AI</span>
         </div>
         
-        <nav className="flex-1 overflow-y-auto px-3 py-1 space-y-0.5">
-          <a href="#" className="sidebar-link active"><LayoutDashboard size={16} /> Dashboard</a>
-          <a href="#" className="sidebar-link"><Compass size={16} /> Discover Requests</a>
-          <a href="#" className="sidebar-link"><Wallet size={16} /> My Contributions</a>
-          <a href="#" className="sidebar-link"><Star size={16} /> Favorites</a>
-          <a href="#" className="sidebar-link"><FileText size={16} /> Impact Reports</a>
-          <a href="#" className="sidebar-link justify-between">
-            <span className="flex items-center gap-3"><MessageSquare size={16} /> Messages</span>
-            <span className="w-4 h-4 rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold flex items-center justify-center">3</span>
+        <nav className="flex-1 overflow-y-auto px-4 py-6 space-y-2">
+          <a href="#" className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-indigo-600 text-white font-medium">
+            <LayoutDashboard size={18} /> Impact Dashboard
           </a>
-          <a href="#" className="sidebar-link"><BarChart2 size={16} /> Analytics</a>
-          <a href="#" className="sidebar-link"><Users size={16} /> Funder Community</a>
-          <div className="my-3 border-t border-slate-100"></div>
-          <a href="#" className="sidebar-link"><Settings size={16} /> Settings</a>
-          <a href="#" className="sidebar-link"><HelpCircle size={16} /> Help & Support</a>
+          <a href="#" className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white font-medium transition">
+            <Compass size={18} /> Discover Needs
+          </a>
+          <a href="#" className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white font-medium transition">
+            <Wallet size={18} /> Contributions
+          </a>
+          <a href="#" className="flex items-center justify-between px-3 py-2.5 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white font-medium transition">
+            <div className="flex items-center gap-3"><FileText size={18} /> Impact Reports</div>
+          </a>
+          <a href="#" className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white font-medium transition">
+            <Users size={18} /> Fellow Funders
+          </a>
         </nav>
-
-        <div className="p-3 border-t border-slate-100">
-          <button onClick={() => { logout(); navigate('/login'); }} className="flex items-center justify-between w-full p-2 hover:bg-slate-50 rounded-lg transition-colors">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 font-bold text-xs">
-                {user?.full_name?.charAt(0) || 'F'}
-              </div>
-              <div className="text-left">
-                <div className="text-xs font-bold text-slate-900 leading-tight">{user?.full_name || 'Funder'}</div>
-                <div className="text-[10px] text-slate-500">{user?.role || 'Funder'}</div>
-              </div>
-            </div>
-            <ChevronDown size={14} className="text-slate-400" />
-          </button>
-        </div>
       </aside>
 
       {/* ── Main ── */}
-      <div className="flex-1 flex flex-col min-w-0">
-        
-        {/* Top Bar */}
-        <header className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-6 shrink-0">
-          <div>
-            <h1 className="text-lg font-bold text-slate-900" style={{ fontFamily: "'Outfit', sans-serif" }}>Funder Dashboard</h1>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="relative hidden md:block">
-              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input type="text" placeholder="Search..." className="pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs w-48 focus:outline-none focus:ring-1 focus:ring-blue-500" />
-            </div>
-            <button className="relative p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-50">
-              <Bell size={16} />
-              <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-red-500 rounded-full"></span>
-            </button>
-            <div className="text-right hidden sm:block">
-              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Contributed</div>
-              <div className="text-sm font-bold text-slate-900 flex items-center gap-1">₹{totalDisbursed.toLocaleString() || '0'} <span className="text-[9px] text-emerald-600 font-bold">↑12%</span></div>
-            </div>
-          </div>
-        </header>
-
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-5">
+      <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
+        <div className="p-8 max-w-7xl mx-auto w-full">
           
-          {/* KPI Row */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <div className="flex items-center justify-between mb-8">
+            <div>
+              <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Your Philanthropic Impact</h1>
+              <p className="text-sm text-slate-500 mt-1">Review your contributions and discover new AI-verified opportunities.</p>
+            </div>
+            <button className="bg-indigo-600 text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-indigo-700 shadow-md transition flex items-center gap-2">
+              <Plus size={16} /> Add Funds
+            </button>
+          </div>
+          
+          {/* KPI Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
             {[
-              { label: 'Total Requests', value: totalReq, icon: FileText, color: 'text-blue-500', bg: 'bg-blue-50' },
-              { label: 'Pending', value: pendingReq, icon: Clock, color: 'text-amber-500', bg: 'bg-amber-50' },
-              { label: 'Verified', value: verifiedReq, icon: ShieldCheck, color: 'text-purple-500', bg: 'bg-purple-50' },
-              { label: 'Funded', value: fundedReq, icon: CheckCircle2, color: 'text-emerald-500', bg: 'bg-emerald-50' },
-            ].map((kpi, i) => (
-              <div key={i} className="bg-white p-4 rounded-xl border border-slate-200 flex items-center gap-3">
-                <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${kpi.bg}`}>
-                  <kpi.icon size={18} className={kpi.color} />
+              { title: 'Students Helped', value: studentsHelped || 12, icon: Users, color: 'text-indigo-600', bg: 'bg-indigo-100' },
+              { title: 'Total Contributions', value: `₹${(totalDisbursed || 125000).toLocaleString()}`, icon: Wallet, color: 'text-emerald-600', bg: 'bg-emerald-100' },
+              { title: 'Impact Score', value: '94/100', icon: Star, color: 'text-amber-600', bg: 'bg-amber-100' },
+              { title: 'Requests Funded', value: studentsHelped || 15, icon: HandHeart, color: 'text-blue-600', bg: 'bg-blue-100' },
+            ].map((kpi, idx) => (
+              <motion.div 
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: idx * 0.1 }}
+                key={idx} 
+                className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between hover:shadow-md transition"
+              >
+                <div>
+                  <p className="text-sm font-medium text-slate-500 mb-1">{kpi.title}</p>
+                  <h3 className="text-2xl font-bold text-slate-900">{kpi.value}</h3>
                 </div>
-                <div className="min-w-0">
-                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{kpi.label}</div>
-                  <div className="text-xl font-bold text-slate-900 leading-tight" style={{ fontFamily: "'Outfit', sans-serif" }}>{kpi.value}</div>
+                <div className={`p-3 rounded-xl ${kpi.bg}`}>
+                  <kpi.icon className={`w-6 h-6 ${kpi.color}`} />
                 </div>
-              </div>
+              </motion.div>
             ))}
           </div>
 
-          <div className="flex flex-col xl:flex-row gap-5">
-            
-            {/* Left: Request Table */}
-            <div className="xl:w-[68%]">
-              <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-                <div className="p-4 border-b border-slate-100 flex items-center justify-between">
-                  <h3 className="text-sm font-bold text-slate-900">Active Requests</h3>
-                  <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-bold">{requests.length}</span>
-                </div>
-                
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left">
-                    <thead>
-                      <tr className="border-b border-slate-100 text-[10px] uppercase tracking-wider text-slate-400 font-bold">
-                        <th className="px-4 py-2.5">Request</th>
-                        <th className="px-4 py-2.5">Amount</th>
-                        <th className="px-4 py-2.5">Status</th>
-                        <th className="px-4 py-2.5 text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-50">
-                      {requests.map((req) => {
-                        const cat = CAT_META[req.category] || {};
-                        const CatIcon = cat.icon || BookOpen;
-                        const sc = STATUS_COLORS[req.status] || STATUS_COLORS.submitted;
-                        return (
-                          <tr key={req.id} className="hover:bg-slate-50/50 transition-colors">
-                            <td className="px-4 py-3">
-                              <div className="flex items-center gap-2.5">
-                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${cat.bg || 'bg-blue-50'}`}>
-                                  <CatIcon size={14} className={cat.color || 'text-blue-600'} />
-                                </div>
-                                <div className="min-w-0">
-                                  <div className="text-xs font-bold text-slate-900">{cat.label || req.category}</div>
-                                  <div className="text-[10px] text-slate-400 truncate max-w-[180px]">{req.description}</div>
-                                </div>
-                              </div>
-                            </td>
-                            <td className="px-4 py-3">
-                              <div className="text-xs font-bold text-slate-900">₹{(req.amount || 0).toLocaleString()}</div>
-                              <div className="text-[10px] text-slate-400">{req.deadline_date}</div>
-                            </td>
-                            <td className="px-4 py-3">
-                              <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold border ${sc.bg} ${sc.text} ${sc.border}`}>
-                                {(req.status || 'submitted').charAt(0).toUpperCase() + (req.status || 'submitted').slice(1)}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 text-right">
-                              <div className="flex justify-end gap-1.5">
-                                <button onClick={() => navigate(`/status/${req.id}`)} className="p-1 text-slate-400 hover:text-blue-600 rounded" title="View">
-                                  <Eye size={14} />
-                                </button>
-                                {req.status === 'submitted' && (
-                                  <button onClick={() => handleAction(req.id, 'verify')} disabled={actionLoading[`verify_${req.id}`]}
-                                    className="px-2 py-1 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded text-[10px] font-bold disabled:opacity-50">
-                                    {actionLoading[`verify_${req.id}`] ? '...' : 'Verify'}
-                                  </button>
-                                )}
-                                {req.status === 'verified' && (
-                                  <button onClick={() => handleAction(req.id, 'match')} disabled={actionLoading[`match_${req.id}`]}
-                                    className="px-2 py-1 bg-blue-600 text-white hover:bg-blue-700 rounded text-[10px] font-bold disabled:opacity-50">
-                                    {actionLoading[`match_${req.id}`] ? '...' : 'Match'}
-                                  </button>
-                                )}
-                                {req.status === 'matched' && (
-                                  <button onClick={() => handleAction(req.id, 'approve')} disabled={actionLoading[`approve_${req.id}`]}
-                                    className="px-2 py-1 bg-emerald-600 text-white hover:bg-emerald-700 rounded text-[10px] font-bold disabled:opacity-50">
-                                    {actionLoading[`approve_${req.id}`] ? '...' : 'Fund'}
-                                  </button>
-                                )}
-                                {['disbursed', 'completed'].includes(req.status) && (
-                                  <button onClick={() => handleAction(req.id, 'impact')} disabled={actionLoading[`impact_${req.id}`]}
-                                    className="px-2 py-1 bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 rounded text-[10px] font-bold disabled:opacity-50">
-                                    {actionLoading[`impact_${req.id}`] ? '...' : 'Impact'}
-                                  </button>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                      {requests.length === 0 && (
-                        <tr><td colSpan="4" className="px-4 py-8 text-center text-xs text-slate-400">No requests found</td></tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+            {/* Left: AI Recommended Requests */}
+            <div className="xl:col-span-2 space-y-6">
+              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <Sparkles size={18} className="text-indigo-500" /> AI Recommended for You
+              </h3>
               
-              {/* Purple Banner */}
-              <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-xl p-6 mt-5 flex flex-col sm:flex-row items-center justify-between text-white">
-                <div className="mb-4 sm:mb-0">
-                  <h3 className="text-lg font-bold" style={{ fontFamily: "'Outfit', sans-serif" }}>Make a Bigger Impact</h3>
-                  <p className="text-indigo-100 text-xs mt-1">Set up recurring giving to help more students consistently.</p>
-                </div>
-                <button className="bg-white text-indigo-700 px-5 py-2 rounded-lg text-xs font-bold hover:bg-indigo-50 transition-colors whitespace-nowrap">
-                  Set Up Recurring Giving
-                </button>
+              <div className="space-y-4">
+                {verifiedRequests.length > 0 ? verifiedRequests.slice(0, 3).map((req, i) => {
+                  const cat = CAT_META[req.category] || {};
+                  const CatIcon = cat.icon || BookOpen;
+                  
+                  return (
+                    <motion.div 
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: i * 0.1 }}
+                      key={req.id} 
+                      className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm hover:border-indigo-300 transition"
+                    >
+                      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-4">
+                        <div className="flex items-center gap-4">
+                          <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${cat.bg || 'bg-blue-50'}`}>
+                            <CatIcon size={24} className={cat.color || 'text-blue-600'} />
+                          </div>
+                          <div>
+                            <h4 className="text-base font-bold text-slate-900">{cat.label || req.category} Student Request</h4>
+                            <p className="text-sm text-slate-500 mt-0.5 line-clamp-1">{req.description}</p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-xl font-bold text-slate-900">₹{(req.amount || 0).toLocaleString()}</div>
+                          <span className="text-xs font-semibold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full mt-1 inline-block">High Urgency</span>
+                        </div>
+                      </div>
+                      
+                      <div className="flex flex-wrap gap-4 mt-6 pt-4 border-t border-slate-100">
+                        <div className="flex items-center gap-2 text-sm text-slate-600">
+                          <ShieldCheck size={16} className="text-emerald-500" />
+                          <span>AI Verified</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm text-slate-600">
+                          <Zap size={16} className="text-indigo-500" />
+                          <span>92 Impact Score</span>
+                        </div>
+                        <button 
+                          onClick={() => handleAction(req.id, 'approve')} 
+                          disabled={actionLoading[`approve_${req.id}`]}
+                          className="ml-auto bg-indigo-600 text-white px-6 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition shadow-sm disabled:opacity-50"
+                        >
+                          {actionLoading[`approve_${req.id}`] ? 'Funding...' : 'Fund Request'}
+                        </button>
+                      </div>
+                    </motion.div>
+                  )
+                }) : (
+                  <div className="bg-white rounded-xl border border-slate-200 p-12 text-center shadow-sm">
+                    <p className="text-slate-500">No verified requests matching your criteria right now.</p>
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* Right: Charts */}
-            <div className="xl:w-[32%] space-y-5">
-              <div className="bg-white rounded-xl border border-slate-200 p-4">
-                <h3 className="text-sm font-bold text-slate-900 mb-4">Impact Overview</h3>
-                <div className="h-40 w-full relative mb-4">
+            {/* Right: Impact Analytics */}
+            <div className="space-y-6">
+              <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+                <h3 className="text-sm font-bold text-slate-900 mb-6">Funding Success Rate</h3>
+                <div className="h-48 w-full">
                   <ResponsiveContainer width="100%" height="100%">
-                    <RechartsPieChart>
-                      <Pie data={pieData} innerRadius={50} outerRadius={68} paddingAngle={2} dataKey="value" stroke="none">
-                        {pieData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                        ))}
-                      </Pie>
-                    </RechartsPieChart>
+                    <BarChart data={barData}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
+                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748B', fontSize: 12}} />
+                      <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748B', fontSize: 12}} />
+                      <RechartsTooltip cursor={{fill: '#F8FAFC'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}} />
+                      <Bar dataKey="impact" fill="#4F46E5" radius={[4, 4, 0, 0]} />
+                    </BarChart>
                   </ResponsiveContainer>
-                  <div className="absolute inset-0 flex items-center justify-center flex-col">
-                    <span className="text-lg font-bold text-slate-900 leading-none">₹{totalDisbursed.toLocaleString()}</span>
-                    <span className="text-[9px] text-slate-400 font-bold uppercase mt-0.5">Total</span>
-                  </div>
                 </div>
-                <div className="space-y-2">
-                  {pieData.map((entry, i) => (
-                    <div key={i} className="flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: PIE_COLORS[i] }}></span>
-                        <span className="text-slate-600">{entry.name}</span>
+              </div>
+
+              <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+                <h3 className="text-sm font-bold text-slate-900 mb-4 flex items-center justify-between">
+                  Category Impact
+                  <span className="text-xs font-normal text-indigo-600 cursor-pointer">Detailed Report</span>
+                </h3>
+                <div className="space-y-4">
+                  {pieData.map((item, idx) => (
+                    <div key={idx}>
+                      <div className="flex justify-between text-sm mb-1.5">
+                        <span className="font-medium text-slate-700">{item.name}</span>
+                        <span className="text-slate-500">{item.value}%</span>
                       </div>
-                      <span className="font-bold text-slate-900">{entry.value}%</span>
+                      <div className="w-full bg-slate-100 rounded-full h-1.5">
+                        <div className="bg-indigo-500 h-1.5 rounded-full" style={{ width: `${item.value}%` }}></div>
+                      </div>
                     </div>
                   ))}
                 </div>
               </div>
 
-              <div className="bg-white rounded-xl border border-slate-200 p-4">
-                <h3 className="text-sm font-bold text-slate-900 mb-4">Recent Activity</h3>
-                <div className="space-y-4">
-                  {[
-                    { text: 'Request verified', time: '2h ago', icon: ShieldCheck, color: 'text-purple-600', bg: 'bg-purple-50' },
-                    { text: 'New request received', time: '3h ago', icon: FileText, color: 'text-blue-600', bg: 'bg-blue-50' },
-                    { text: 'Request matched', time: '5h ago', icon: Zap, color: 'text-cyan-600', bg: 'bg-cyan-50' },
-                    { text: 'Funds disbursed', time: '1d ago', icon: IndianRupee, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-                  ].map((act, i) => (
-                    <div key={i} className="flex gap-3">
-                      <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${act.bg}`}>
-                        <act.icon size={12} className={act.color} />
-                      </div>
-                      <div>
-                        <div className="text-xs font-medium text-slate-700">{act.text}</div>
-                        <div className="text-[10px] text-slate-400">{act.time}</div>
-                      </div>
-                    </div>
-                  ))}
+              <div className="bg-gradient-to-br from-indigo-900 to-slate-900 rounded-xl p-6 text-white shadow-lg flex items-center justify-between">
+                <div>
+                  <h3 className="font-bold mb-1">Impact Map Available</h3>
+                  <p className="text-xs text-indigo-200">See where your funds are making a difference across institutions.</p>
+                </div>
+                <div className="p-3 bg-white/10 rounded-full cursor-pointer hover:bg-white/20 transition">
+                  <Map size={24} className="text-indigo-300" />
                 </div>
               </div>
             </div>
