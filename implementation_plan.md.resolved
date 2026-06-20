@@ -1,0 +1,508 @@
+# VidyaFund AI — Implementation Plan
+
+An institutional student-funding routing platform that prevents dependency by enforcing minimum thresholds, fixed categories, frequency caps, and institutional-only funding.
+
+## Architecture Overview
+
+```mermaid
+graph TB
+    subgraph Frontend ["React + Tailwind Frontend"]
+        SR[Student Request Form]
+        FD[Funder Dashboard]
+        ST[Status Tracker]
+    end
+
+    subgraph Backend ["FastAPI Backend"]
+        AUTH[JWT Auth Middleware]
+        API[API Routes]
+        VA[Verification Agent]
+        UE[Urgency Engine]
+        ME[Matching Engine]
+        IA[Impact Agent]
+        RP[Razorpay Service]
+    end
+
+    subgraph Database ["PostgreSQL"]
+        DB[(Tables: users, students,<br/>requests, funders, matches,<br/>transactions, impact_logs)]
+    end
+
+    SR --> AUTH --> API
+    FD --> AUTH
+    ST --> AUTH
+    API --> VA
+    API --> UE
+    API --> ME
+    API --> IA
+    API --> RP
+    API --> DB
+```
+
+## Core Rules Enforcement Summary
+
+| Rule | Where Enforced | How |
+|------|---------------|-----|
+| **Rs. 2,000 minimum** | DB `CHECK` constraint + API validation + Frontend inline validation | `amount >= 2000` at all 3 layers |
+| **Fixed categories** | DB `ENUM` type + API Pydantic enum + Frontend fixed dropdown | `exam_fee`, `certification_fee`, `device_repair`, `interview_travel` |
+| **1-2 requests/year** | DB query check + API pre-insert validation | Count existing requests for `student_id` in current academic year |
+| **Institutional only** | DB `funder_type` enum + No individual donor UI/API | CSR, alumni association, college welfare office only |
+
+---
+
+## Project Structure
+
+```
+d:\HACKTHEMATRIX\
+├── backend/
+│   ├── app/
+│   │   ├── __init__.py
+│   │   ├── main.py                 # FastAPI entry point
+│   │   ├── config.py               # Settings via pydantic-settings
+│   │   ├── database.py             # Async SQLAlchemy engine + session
+│   │   ├── models/
+│   │   │   ├── __init__.py
+│   │   │   ├── user.py
+│   │   │   ├── student.py
+│   │   │   ├── request.py
+│   │   │   ├── funder.py
+│   │   │   ├── match.py
+│   │   │   ├── transaction.py
+│   │   │   └── impact_log.py
+│   │   ├── schemas/
+│   │   │   ├── __init__.py
+│   │   │   ├── auth.py
+│   │   │   ├── request.py
+│   │   │   ├── funder.py
+│   │   │   ├── match.py
+│   │   │   └── impact.py
+│   │   ├── api/
+│   │   │   ├── __init__.py
+│   │   │   ├── auth.py             # /auth/register, /auth/login
+│   │   │   ├── requests.py         # /requests CRUD
+│   │   │   ├── verify.py           # /verify/:id
+│   │   │   ├── match.py            # /match/:id
+│   │   │   ├── disburse.py         # /disburse/:id
+│   │   │   └── impact.py           # /impact/:id
+│   │   ├── services/
+│   │   │   ├── __init__.py
+│   │   │   ├── auth_service.py     # JWT creation, password hashing
+│   │   │   ├── verification_agent.py  # Tesseract + GPT-4o-mini
+│   │   │   ├── urgency_engine.py      # Rule-based urgency scoring
+│   │   │   ├── matching_engine.py     # Funder-request matching
+│   │   │   ├── razorpay_service.py    # Razorpay test mode
+│   │   │   └── impact_agent.py        # ReportLab PDF generation
+│   │   └── middleware/
+│   │       ├── __init__.py
+│   │       └── auth.py             # JWT dependency injection
+│   ├── seed.py                     # Seed data script
+│   ├── requirements.txt
+│   ├── .env.example
+│   └── alembic/                    # DB migrations (optional for hackathon)
+│       └── ...
+├── frontend/
+│   ├── src/
+│   │   ├── main.jsx
+│   │   ├── App.jsx
+│   │   ├── index.css               # Tailwind + custom design tokens
+│   │   ├── api/
+│   │   │   └── client.js           # Axios instance with JWT interceptor
+│   │   ├── context/
+│   │   │   └── AuthContext.jsx      # Auth state management
+│   │   ├── pages/
+│   │   │   ├── Login.jsx
+│   │   │   ├── Register.jsx
+│   │   │   ├── StudentRequest.jsx   # Multi-step form
+│   │   │   ├── FunderDashboard.jsx  # Anonymous profile cards
+│   │   │   ├── StatusTracker.jsx    # Live status tracker
+│   │   │   └── AdminPanel.jsx       # Admin overview
+│   │   └── components/
+│   │       ├── Navbar.jsx
+│   │       ├── RequestCard.jsx
+│   │       ├── StatusTimeline.jsx
+│   │       ├── FileUpload.jsx
+│   │       └── ProtectedRoute.jsx
+│   ├── package.json
+│   ├── vite.config.js
+│   └── index.html
+├── reports/                         # Generated impact PDFs
+└── uploads/                         # Uploaded verification documents
+```
+
+---
+
+## Phase 1: Database Schema (PostgreSQL)
+
+### Tables
+
+#### `users`
+| Column | Type | Constraints |
+|--------|------|-------------|
+| id | UUID | PK, DEFAULT gen_random_uuid() |
+| email | VARCHAR(255) | UNIQUE, NOT NULL |
+| password_hash | VARCHAR(255) | NOT NULL |
+| full_name | VARCHAR(255) | NOT NULL |
+| role | ENUM('student','funder','admin') | NOT NULL |
+| created_at | TIMESTAMP | DEFAULT NOW() |
+
+#### `students`
+| Column | Type | Constraints |
+|--------|------|-------------|
+| id | UUID | PK, DEFAULT gen_random_uuid() |
+| user_id | UUID | FK → users.id, UNIQUE |
+| institution | VARCHAR(255) | NOT NULL |
+| enrollment_id | VARCHAR(100) | UNIQUE, NOT NULL |
+| academic_year | VARCHAR(10) | NOT NULL (e.g. '2025-26') |
+| request_count | INTEGER | DEFAULT 0, CHECK >= 0 |
+
+#### `requests`
+| Column | Type | Constraints |
+|--------|------|-------------|
+| id | UUID | PK |
+| student_id | UUID | FK → students.id |
+| category | ENUM('exam_fee','certification_fee','device_repair','interview_travel') | NOT NULL |
+| amount | INTEGER | NOT NULL, **CHECK (amount >= 2000)** |
+| description | TEXT | NOT NULL |
+| deadline_date | DATE | NOT NULL |
+| document_url | VARCHAR(500) | |
+| verification_score | INTEGER | DEFAULT NULL |
+| verification_flags | JSONB | DEFAULT '[]' |
+| urgency_level | VARCHAR(10) | DEFAULT NULL |
+| review_flag | BOOLEAN | DEFAULT FALSE |
+| status | ENUM('submitted','verified','matched','approved','disbursed','completed','rejected') | DEFAULT 'submitted' |
+| academic_year | VARCHAR(10) | NOT NULL |
+| created_at | TIMESTAMP | DEFAULT NOW() |
+
+> [!IMPORTANT]
+> The `CHECK (amount >= 2000)` constraint is the database-level enforcement of Core Rule 1. Even if the API/frontend validation is bypassed, the DB will reject sub-Rs.2000 inserts.
+
+#### `funders`
+| Column | Type | Constraints |
+|--------|------|-------------|
+| id | UUID | PK |
+| user_id | UUID | FK → users.id, UNIQUE |
+| org_name | VARCHAR(255) | NOT NULL |
+| funder_type | ENUM('csr_program','alumni_association','college_welfare') | NOT NULL |
+| categories_supported | JSONB | NOT NULL (array of supported categories) |
+| available_balance | INTEGER | DEFAULT 0 |
+| avg_payout_days | FLOAT | DEFAULT 3.0 |
+
+#### `matches`
+| Column | Type | Constraints |
+|--------|------|-------------|
+| id | UUID | PK |
+| request_id | UUID | FK → requests.id |
+| funder_id | UUID | FK → funders.id |
+| match_score | FLOAT | NOT NULL |
+| status | ENUM('proposed','accepted','rejected') | DEFAULT 'proposed' |
+| created_at | TIMESTAMP | DEFAULT NOW() |
+
+#### `transactions`
+| Column | Type | Constraints |
+|--------|------|-------------|
+| id | UUID | PK |
+| match_id | UUID | FK → matches.id |
+| razorpay_order_id | VARCHAR(255) | |
+| razorpay_payment_id | VARCHAR(255) | |
+| amount | INTEGER | NOT NULL |
+| status | ENUM('pending','funded','failed') | DEFAULT 'pending' |
+| created_at | TIMESTAMP | DEFAULT NOW() |
+
+#### `impact_logs`
+| Column | Type | Constraints |
+|--------|------|-------------|
+| id | UUID | PK |
+| transaction_id | UUID | FK → transactions.id |
+| report_url | VARCHAR(500) | NOT NULL |
+| funder_name | VARCHAR(255) | NOT NULL |
+| amount | INTEGER | NOT NULL |
+| category | VARCHAR(50) | NOT NULL |
+| outcome | TEXT | |
+| generated_at | TIMESTAMP | DEFAULT NOW() |
+
+### Implementation Notes
+- Use SQLAlchemy 2.0 `Mapped`/`mapped_column` syntax with async engine via `asyncpg`
+- For hackathon speed, use `Base.metadata.create_all()` for initial setup (skip Alembic migrations)
+- Enums defined as Python `enum.Enum` mapped to PostgreSQL ENUM types
+
+---
+
+## Phase 2: FastAPI Backend Skeleton
+
+### Auth Endpoints
+- `POST /auth/register` — Register with role selection (student/funder/admin). Auto-create linked `students` or `funders` row.
+- `POST /auth/login` — Returns JWT token with `{user_id, role}` payload. 24h expiry.
+
+### Request Endpoints
+- `POST /requests` — **Core validation:**
+  1. `amount >= 2000` → else 400: `"Minimum funding request is Rs. 2,000. Smaller requests create dependency patterns that undermine the platform's mission."`
+  2. `category in ['exam_fee', 'certification_fee', 'device_repair', 'interview_travel']` → else 400: `"Invalid category"`
+  3. Count student's requests in current academic year < 2 → else 400: `"Maximum 2 requests per academic year reached"`
+  4. Student role check via JWT
+- `GET /requests/{id}` — Returns request details + status
+
+### Verification Endpoint
+- `POST /verify/{id}` — Triggers verification agent, updates `verification_score` and `verification_flags`
+
+### Match Endpoint
+- `GET /match/{id}` — Runs matching engine, creates `matches` rows, returns ranked list
+
+### Disburse Endpoint
+- `POST /disburse/{id}` — Funder approves match → Creates Razorpay order for full amount → Creates `transaction` row
+
+### Impact Endpoint
+- `GET /impact/{id}` — Generates PDF report via ReportLab, returns download URL
+
+### Webhook
+- `POST /webhooks/razorpay` — Razorpay webhook updates transaction status to 'funded', triggers impact report generation
+
+### Middleware
+- JWT dependency: Extract token from `Authorization: Bearer <token>`, decode, inject `current_user` into route handlers
+- Role-based access: `require_role("student")`, `require_role("funder")`, `require_role("admin")` decorators
+
+---
+
+## Phase 3: Verification Agent
+
+```python
+# Pseudocode for verification_agent.py
+async def verify_document(file_path: str) -> dict:
+    # 1. OCR extraction
+    if file_path.endswith('.pdf'):
+        images = convert_from_path(file_path, dpi=300)
+        text = "".join(pytesseract.image_to_string(img) for img in images)
+    else:
+        text = pytesseract.image_to_string(Image.open(file_path))
+    
+    # 2. GPT-4o-mini analysis
+    prompt = f"""Analyze this document text for a student funding request.
+    Score authenticity 0-100. Flag any fraud indicators.
+    Document text: {text}
+    Return JSON: {{"verification_score": int, "flags": [str]}}"""
+    
+    response = openai_client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}],
+        response_format={"type": "json_object"}
+    )
+    return json.loads(response.choices[0].message.content)
+```
+
+> [!NOTE]
+> For the hackathon demo, if Tesseract is not installed on the machine, we'll provide a fallback mock that returns a plausible score (75-95) with empty flags. This ensures the demo flow works regardless of OCR setup.
+
+---
+
+## Phase 4: Urgency Engine
+
+```python
+def calculate_urgency(deadline_date, amount, category, request_history) -> dict:
+    days_remaining = (deadline_date - date.today()).days
+    
+    # Category severity weights
+    severity = {"exam_fee": 1.0, "interview_travel": 0.9, 
+                "certification_fee": 0.7, "device_repair": 0.6}
+    
+    # Score calculation
+    time_score = max(0, 100 - (days_remaining * 3))  # More urgent as deadline nears
+    severity_score = severity[category] * 100
+    urgency_score = (time_score * 0.6) + (severity_score * 0.4)
+    
+    level = "High" if urgency_score >= 70 else "Medium" if urgency_score >= 40 else "Low"
+    
+    # Review flag: pattern of repeated requests (approaching cap)
+    review_flag = len(request_history) >= 1  # Flag if student already has prior request
+    
+    return {"urgency_level": level, "urgency_score": urgency_score, "review_flag": review_flag}
+```
+
+---
+
+## Phase 5: Matching Engine
+
+```python
+def match_funders(request, funders) -> list:
+    ranked = []
+    for funder in funders:
+        # Category fit (binary)
+        cat_fit = 1.0 if request.category in funder.categories_supported else 0.0
+        
+        # Balance ratio (can they cover it?)
+        balance_ratio = min(funder.available_balance / request.amount, 1.0)
+        
+        # Speed score (inverse of avg payout days, normalized)
+        speed_score = max(0, 1.0 - (funder.avg_payout_days / 30))
+        
+        # Composite score
+        score = (cat_fit * 0.5) + (balance_ratio * 0.3) + (speed_score * 0.2)
+        
+        if cat_fit > 0:  # Only include funders that support this category
+            ranked.append({"funder_id": funder.id, "match_score": round(score, 3)})
+    
+    return sorted(ranked, key=lambda x: x["match_score"], reverse=True)
+```
+
+---
+
+## Phase 6: React Frontend
+
+### Pages
+
+#### `/student/request` — Multi-Step Request Form
+- **Step 1**: Category selection (fixed dropdown: 4 options, no "Other")
+- **Step 2**: Amount input with **inline validation** — if user types < 2000:
+  - Red border + message: *"Minimum request is ₹2,000. VidyaFund focuses on significant academic expenses to prevent dependency."*
+  - Submit button disabled
+- **Step 3**: Description + deadline date
+- **Step 4**: Document upload (PDF/image)
+- **Step 5**: Review & submit
+
+#### `/funder/dashboard` — Funder View
+- Anonymous profile cards showing: category, amount, urgency level, verification score
+- **No** student name, institution, or personal identifiers
+- "Approve Funding" button on each card → triggers Razorpay checkout for full amount
+- **No** donation slider, **no** partial amounts, **no** public campaign UI
+
+#### `/status/{id}` — Live Status Tracker
+- Timeline view: Submitted → Verified → Matched → Approved → Disbursed → Completed
+- Each step shows timestamp and relevant details
+- **No** progress bar UI pattern — use a vertical timeline with checkmarks
+
+#### `/login` and `/register`
+- Clean auth forms with role selection dropdown
+
+### Design System
+- **Primary**: Indigo `#3730A3`
+- **Accent**: Indigo-400 `#818CF8`
+- **Background**: Slate-50 `#F8FAFC` (light) / Slate-900 `#0F172A` (dark)
+- **Card style**: Rounded-2xl, shadow-lg, white background
+- **Typography**: Inter font family
+- **Micro-animations**: Fade-in on page load, scale on card hover, pulse on status updates
+
+---
+
+## Phase 7: Razorpay Integration (Test Mode)
+
+- On funder approval: Backend creates Razorpay order for **full request amount** in **one transaction**
+- Frontend opens Razorpay checkout modal with test keys (`rzp_test_...`)
+- On payment success: Frontend sends `{razorpay_order_id, razorpay_payment_id, razorpay_signature}` to backend
+- Backend verifies signature → updates transaction status → triggers impact report
+- Test card: `4111 1111 1111 1111`, any future expiry, any CVV
+
+> [!WARNING]
+> You'll need to create a Razorpay account and generate test API keys. Set them in the `.env` file. For the demo, we'll use placeholder keys that you'll replace.
+
+---
+
+## Phase 8: Impact Agent (ReportLab PDF)
+
+- On successful transaction completion:
+  1. Query transaction + match + request + funder data
+  2. Generate PDF with ReportLab containing:
+     - VidyaFund AI header/logo
+     - Funder organization name
+     - Amount disbursed
+     - Student need category (anonymized — no student name)
+     - Date funded
+     - Outcome summary
+  3. Save to `reports/` directory
+  4. Store URL in `impact_logs` table
+  5. Return download link
+
+---
+
+## Phase 9: Seed Data Script
+
+### Mock Funders (5-10 institutional)
+- "Tata CSR Education Fund" (CSR program) — supports all categories, ₹500,000 balance
+- "IIT Bombay Alumni Association" (Alumni) — supports exam_fee, certification_fee, ₹300,000
+- "Delhi University Welfare Office" (College welfare) — supports all, ₹200,000
+- "Infosys Foundation CSR" (CSR) — supports certification_fee, device_repair, ₹750,000
+- "BITS Pilani Alumni Fund" (Alumni) — supports interview_travel, exam_fee, ₹400,000
+- "Wipro CSR Education Wing" (CSR) — supports all, ₹600,000
+- "Anna University Student Welfare" (College welfare) — supports exam_fee, device_repair, ₹150,000
+- "HCL Foundation Education" (CSR) — supports certification_fee, interview_travel, ₹350,000
+
+### Mock Student Requests (10-15, all ≥ Rs.2000)
+- Mix of all 4 categories
+- Amounts ranging from ₹2,000 to ₹25,000
+- Different urgency levels (varying deadline dates)
+- Different statuses to populate the pipeline
+
+---
+
+## Phase 10: Demo Flow
+
+```mermaid
+sequenceDiagram
+    participant S as Student
+    participant FE as Frontend
+    participant BE as Backend
+    participant AI as AI Agents
+    participant RZ as Razorpay
+    participant F as Funder
+
+    Note over S,F: 1. REJECTION DEMO (Core Rule 1)
+    S->>FE: Enters Rs. 500 amount
+    FE-->>S: ❌ Inline error: "Min Rs. 2,000"
+    
+    Note over S,F: 2. VALID REQUEST
+    S->>FE: Submit Rs. 5,000 exam_fee request
+    FE->>BE: POST /requests
+    BE->>BE: Validate (amount ≥ 2000 ✓, category ✓, freq cap ✓)
+    BE-->>FE: 201 Created
+
+    Note over S,F: 3. VERIFICATION
+    BE->>AI: Verification Agent (Tesseract + GPT-4o-mini)
+    AI-->>BE: {score: 87, flags: []}
+
+    Note over S,F: 4. URGENCY + MATCHING
+    BE->>AI: Urgency Engine → "High"
+    BE->>AI: Matching Engine → Top 3 funders
+
+    Note over S,F: 5. FUNDER APPROVAL + PAYMENT
+    F->>FE: Views anonymous card, clicks "Approve"
+    FE->>BE: POST /disburse/{id}
+    BE->>RZ: Create order (Rs. 5,000)
+    RZ-->>FE: Checkout modal
+    F->>RZ: Test card payment
+    RZ-->>BE: Webhook: payment success
+
+    Note over S,F: 6. IMPACT REPORT
+    BE->>AI: Impact Agent → Generate PDF
+    BE-->>F: Download link
+```
+
+### Target: Complete demo in under 5 minutes
+
+---
+
+## Open Questions
+
+> [!IMPORTANT]
+> **PostgreSQL Setup**: Do you already have PostgreSQL installed locally, or should I use a Docker container for the database? Docker would be the cleanest approach.
+
+> [!IMPORTANT]
+> **Razorpay Keys**: Do you have a Razorpay account with test API keys ready? If not, I'll set up placeholder keys that you can replace later.
+
+> [!IMPORTANT]
+> **OpenAI API Key**: Do you have a GPT-4o-mini API key for the verification agent? If not, I'll implement a mock verification fallback for the demo.
+
+> [!IMPORTANT]
+> **Tailwind Version**: The user spec says Tailwind CSS — I'll use **Tailwind v4** (latest) with the `@tailwindcss/vite` plugin, which uses the modern `@import "tailwindcss"` syntax. Confirm if you'd prefer v3 instead.
+
+---
+
+## Verification Plan
+
+### Automated Tests
+1. **Backend**: Test all 4 core rule validations via `pytest` + `httpx.AsyncClient`
+   - Test: POST /requests with amount=500 → expect 400
+   - Test: POST /requests with category="other" → expect 400
+   - Test: POST /requests when student already has 2 requests this year → expect 400
+   - Test: Full flow from submit → verify → match → disburse
+2. **Frontend**: Manual browser testing of the multi-step form, inline validation, funder dashboard
+
+### Manual Verification
+- Run the full demo flow end-to-end in the browser
+- Verify the Rs. 2,000 rejection is visually clear
+- Verify Razorpay test payment completes
+- Verify impact PDF downloads correctly

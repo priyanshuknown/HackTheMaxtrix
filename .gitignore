@@ -1,0 +1,8 @@
+node_modules/
+dist/
+venv311/
+__pycache__/
+*.pyc
+.env
+.DS_Store
+vidyafund.db
