@@ -5,36 +5,33 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
   Users, Clock, ShieldAlert, IndianRupee,
-  Search, Eye, LogOut, RefreshCw, CheckCircle2,
-  Layers, ChevronDown, ChevronUp
+  Search, Eye, RefreshCw, CheckCircle,
+  Filter, Sparkles, TrendingUp, ChevronDown, ChevronUp,
+  User, Mail, Building, GraduationCap, Calendar, FileText,
+  AlertTriangle, BarChart3
 } from 'lucide-react';
 import api from '../api/client';
 import toast from 'react-hot-toast';
+import Sidebar from '../components/Sidebar';
 
-const STATUS_STYLES = {
-  submitted: 'bg-amber-50 text-amber-700 border border-amber-200',
-  verified: 'bg-indigo-50 text-indigo-700 border border-indigo-200',
-  matched: 'bg-blue-50 text-blue-700 border border-blue-200',
-  approved: 'bg-violet-50 text-violet-700 border border-violet-200',
-  disbursed: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
-  completed: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
-  rejected: 'bg-rose-50 text-rose-700 border border-rose-200',
+const STATUS_BADGE = {
+  submitted:'badge-submitted', verified:'badge-verified', matched:'badge-matched',
+  approved:'badge-approved', disbursed:'badge-disbursed', completed:'badge-completed', rejected:'badge-rejected',
 };
 
 export default function AdminDashboard() {
-  const { logout, user } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [search, setSearch] = useState('');
-  const [expanded, setExpanded] = useState(null);
+  const [search, setSearch]           = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
   const [verifyingId, setVerifyingId] = useState(null);
+  const [expandedRequest, setExpandedRequest] = useState(null);
+  const [studentDetails, setStudentDetails]   = useState({});
 
   const { data: requests = [], isLoading } = useQuery({
     queryKey: ['admin-requests'],
-    queryFn: async () => {
-      const res = await api.get('/requests');
-      return Array.isArray(res.data) ? res.data : [];
-    },
+    queryFn: async () => { const r = await api.get('/requests'); return Array.isArray(r.data) ? r.data : []; },
     onError: () => toast.error('Failed to load requests'),
   });
 
@@ -44,226 +41,279 @@ export default function AdminDashboard() {
       await api.post(`/verify/${id}`);
       toast.success('AI verification complete!');
       queryClient.invalidateQueries(['admin-requests']);
-    } catch {
-      toast.error('Verification failed');
-    } finally {
-      setVerifyingId(null);
-    }
+    } catch { toast.error('Verification failed'); }
+    finally { setVerifyingId(null); }
   };
 
-  const total = requests.length;
-  const pending = requests.filter(r => r.status === 'submitted').length;
-  const flagged = requests.filter(r => (r.fraud_score || 0) > 70).length;
-  const disbursed = requests
-    .filter(r => ['disbursed', 'completed'].includes(r.status))
-    .reduce((s, r) => s + (r.amount || 0), 0);
 
-  const filtered = requests.filter(r =>
-    (r.description || '').toLowerCase().includes(search.toLowerCase()) ||
-    (r.category || '').toLowerCase().includes(search.toLowerCase())
+
+  const toggleExpand = (reqId, studentId) => {
+    if (expandedRequest === reqId) { setExpandedRequest(null); return; }
+    setExpandedRequest(reqId);
+    if (studentId) fetchStudentDetails(studentId);
+  };
+
+  const total     = requests.length;
+  const pending   = requests.filter(r => r.status === 'submitted').length;
+  const flagged   = requests.filter(r => (r.fraud_score || 0) > 70).length;
+  const disbursed = requests.filter(r => ['disbursed','completed'].includes(r.status)).reduce((s,r) => s+(r.amount||0), 0);
+
+  const filtered = requests.filter(r => {
+    const ms = (r.description||'').toLowerCase().includes(search.toLowerCase()) || (r.category||'').toLowerCase().includes(search.toLowerCase());
+    const mf = statusFilter === 'all' || r.status === statusFilter;
+    return ms && mf;
+  });
+
+  const STATS = [
+    { label:'Total Requests', value:total,     icon:Users,       color:'#6366f1' },
+    { label:'Pending Review', value:pending,   icon:Clock,       color:'#f59e0b' },
+    { label:'High Risk',      value:flagged,   icon:ShieldAlert, color:'#ef4444' },
+    { label:'Disbursed',      value:`₹${(disbursed/100000).toFixed(1)}L`, icon:IndianRupee, color:'#10b981' },
+  ];
+
+  const infoRow = (label, value, icon, color) => (
+    <div style={{ background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.07)', borderRadius:'0.75rem', padding:'0.875rem 1rem' }}>
+      <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'0.375rem' }}>
+        {React.createElement(icon, { size:14, style:{ color } })}
+        <span style={{ fontSize:'0.65rem', fontWeight:700, color:'#475569', textTransform:'uppercase', letterSpacing:'0.06em' }}>{label}</span>
+      </div>
+      <div style={{ fontSize:'0.875rem', fontWeight:700, color:'#e2e8f0', wordBreak:'break-all' }}>{value || '—'}</div>
+    </div>
   );
 
   return (
-    <div className="min-h-screen bg-gray-50 font-sans">
+    <div className="app-shell">
+      <Sidebar />
+      <div className="main-content">
+        {/* Mobile topbar */}
+        <div className="mobile-topbar">
+          <span style={{ fontWeight:800, color:'#f1f5f9', fontFamily:'Outfit,sans-serif' }}>VidyaFund AI</span>
+          <span style={{ fontSize:'0.75rem', color:'#ec4899', fontWeight:700 }}>ADMIN</span>
+        </div>
 
-      {/* ── Topbar ── */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
-        <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 bg-indigo-600 rounded-lg flex items-center justify-center">
-              <Layers size={14} className="text-white" />
+        <div className="page-header" style={{ paddingTop:'1.75rem', marginBottom:'1.75rem' }}>
+          <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:'1rem' }}>
+            <div>
+              <div className="eyebrow"><BarChart3 size={10} /> Admin Console</div>
+              <h1 className="page-title">Requests <span className="gradient-text">Pipeline</span></h1>
+              <p className="page-subtitle">Review, verify and manage student funding requests with AI insights.</p>
             </div>
-            <span className="font-bold text-gray-900 text-sm">VidyaFund</span>
-            <span className="text-gray-300 text-sm">·</span>
-            <span className="text-gray-500 text-xs font-medium">Admin</span>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-gray-500 hidden sm:block">
-              {user?.full_name || 'Admin'}
-            </span>
             <button
-              onClick={() => { logout(); navigate('/login'); }}
-              className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-red-600 transition font-medium"
+              className="btn-secondary"
+              style={{ flexShrink:0, marginTop:'0.5rem' }}
+              onClick={() => queryClient.invalidateQueries(['admin-requests'])}
             >
-              <LogOut size={14} />
-              Logout
+              <RefreshCw size={15} /> Refresh
             </button>
           </div>
         </div>
-      </header>
 
-      <main className="max-w-6xl mx-auto px-6 py-8 space-y-8">
-
-        {/* ── Page Title ── */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold text-gray-900">Requests Pipeline</h1>
-            <p className="text-sm text-gray-500 mt-0.5">Review and verify student funding requests</p>
+        <div className="page-body" style={{ paddingTop:0 }}>
+          {/* Stats */}
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))', gap:'1rem', marginBottom:'2rem' }}>
+            {STATS.map((s, i) => {
+              const Icon = s.icon;
+              return (
+                <motion.div key={i} className="stat-card animate-fade-up" style={{ animationDelay:`${i*0.06}s` }}>
+                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'1rem' }}>
+                    <div style={{ width:'2.5rem', height:'2.5rem', borderRadius:'0.75rem', background:`${s.color}20`, border:`1px solid ${s.color}30`, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                      <Icon size={18} style={{ color: s.color }} />
+                    </div>
+                    <TrendingUp size={13} style={{ color:'#10b981' }} />
+                  </div>
+                  <div style={{ fontSize:'1.75rem', fontWeight:800, color:'#f1f5f9', fontFamily:'Outfit,sans-serif', marginBottom:'0.25rem' }}>{s.value}</div>
+                  <div style={{ fontSize:'0.8rem', color:'#64748b', fontWeight:600 }}>{s.label}</div>
+                </motion.div>
+              );
+            })}
           </div>
-          <button
-            onClick={() => queryClient.invalidateQueries(['admin-requests'])}
-            className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition"
-          >
-            <RefreshCw size={13} />
-            Refresh
-          </button>
-        </div>
 
-        {/* ── KPI Cards ── */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {[
-            { label: 'Total Requests', value: total, icon: Users, color: 'text-blue-600', bg: 'bg-blue-50' },
-            { label: 'Pending Review', value: pending, icon: Clock, color: 'text-amber-600', bg: 'bg-amber-50' },
-            { label: 'High Risk', value: flagged, icon: ShieldAlert, color: 'text-red-600', bg: 'bg-red-50' },
-            { label: 'Total Disbursed', value: `₹${disbursed.toLocaleString()}`, icon: IndianRupee, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-          ].map((kpi, i) => (
-            <motion.div
-              key={i}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.06 }}
-              className="bg-white rounded-xl border border-gray-200 p-4"
-            >
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-xs text-gray-500 font-medium">{kpi.label}</span>
-                <div className={`w-7 h-7 rounded-lg ${kpi.bg} flex items-center justify-center`}>
-                  <kpi.icon size={14} className={kpi.color} />
-                </div>
+          {/* Filters */}
+          <div className="glass-card" style={{ padding:'1rem 1.25rem', marginBottom:'1.25rem' }}>
+            <div style={{ display:'flex', flexWrap:'wrap', gap:'0.875rem', alignItems:'center' }}>
+              {/* Search */}
+              <div style={{ flex:'1 1 240px', position:'relative' }}>
+                <Search size={15} style={{ position:'absolute', left:'0.875rem', top:'50%', transform:'translateY(-50%)', color:'#475569' }} />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder="Search requests..."
+                  className="input-dark"
+                  style={{ height:'2.5rem', paddingLeft:'2.5rem' }}
+                />
               </div>
-              <p className="text-2xl font-bold text-gray-900">{kpi.value}</p>
-            </motion.div>
-          ))}
-        </div>
 
-        {/* ── Requests Table ── */}
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-
-          {/* Table toolbar */}
-          <div className="px-5 py-4 border-b border-gray-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-            <h2 className="text-sm font-semibold text-gray-800">All Funding Requests</h2>
-            <div className="relative w-full sm:w-60">
-              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                placeholder="Search by category or description…"
-                className="w-full pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-              />
+              {/* Status filters */}
+              <div style={{ display:'flex', alignItems:'center', gap:'0.375rem', flexWrap:'wrap' }}>
+                <Filter size={14} style={{ color:'#475569' }} />
+                {['all','submitted','verified','approved','disbursed'].map(status => (
+                  <button
+                    key={status}
+                    onClick={() => setStatusFilter(status)}
+                    style={{
+                      padding:'0.35rem 0.875rem', borderRadius:'999px', fontSize:'0.75rem', fontWeight:700,
+                      border: statusFilter === status ? '1px solid rgba(99,102,241,0.5)' : '1px solid rgba(255,255,255,0.07)',
+                      background: statusFilter === status ? 'rgba(99,102,241,0.15)' : 'rgba(255,255,255,0.03)',
+                      color: statusFilter === status ? '#a5b4fc' : '#64748b',
+                      transition:'all 0.15s ease', textTransform:'capitalize',
+                    }}
+                  >
+                    {status}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
-          {/* Table */}
+          {/* Table header */}
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.875rem' }}>
+            <h2 style={{ fontSize:'1rem', fontWeight:700, color:'#94a3b8' }}>
+              {filtered.length} {statusFilter === 'all' ? 'total' : statusFilter} requests
+            </h2>
+          </div>
+
+          {/* Requests */}
           {isLoading ? (
-            <div className="flex items-center justify-center py-16">
-              <div className="w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+            <div style={{ display:'flex', justifyContent:'center', padding:'4rem 0' }}>
+              <div style={{ width:'2rem', height:'2rem', border:'2px solid rgba(99,102,241,0.3)', borderTopColor:'#6366f1', borderRadius:'50%', animation:'spin 0.8s linear infinite' }} />
             </div>
           ) : filtered.length === 0 ? (
-            <div className="py-16 text-center">
-              <p className="text-gray-400 text-sm">No requests found.</p>
+            <div className="glass-card" style={{ padding:'4rem', textAlign:'center' }}>
+              <Search size={32} style={{ color:'#334155', margin:'0 auto 1rem' }} />
+              <h3 style={{ fontSize:'1.125rem', fontWeight:700, color:'#e2e8f0', marginBottom:'0.5rem' }}>No requests found</h3>
+              <p style={{ color:'#475569', fontSize:'0.875rem' }}>Try adjusting your search or filters</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="bg-gray-50 border-b border-gray-100 text-gray-500 font-semibold uppercase tracking-wide text-[10px]">
-                    <th className="px-5 py-3 text-left">Category</th>
-                    <th className="px-5 py-3 text-left">Amount</th>
-                    <th className="px-5 py-3 text-left">AI Score</th>
-                    <th className="px-5 py-3 text-left">Status</th>
-                    <th className="px-5 py-3 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {filtered.map((req) => {
-                    const isOpen = expanded === req.id;
-                    const fraud = req.fraud_score || 0;
-                    return (
-                      <React.Fragment key={req.id}>
-                        <tr
-                          className="hover:bg-gray-50 transition cursor-pointer"
-                          onClick={() => setExpanded(isOpen ? null : req.id)}
-                        >
-                          <td className="px-5 py-3.5">
-                            <div className="font-semibold text-gray-800 capitalize">
-                              {(req.category || '').replace(/_/g, ' ')}
-                            </div>
-                            <div className="text-[10px] text-gray-400 mt-0.5">{req.academic_year}</div>
-                          </td>
-                          <td className="px-5 py-3.5 font-bold text-gray-900">
-                            ₹{(req.amount || 0).toLocaleString()}
-                          </td>
-                          <td className="px-5 py-3.5">
-                            {req.verification_score ? (
-                              <span className={`text-[10px] font-semibold ${
-                                req.verification_score >= 80 ? 'text-emerald-600' :
-                                req.verification_score >= 50 ? 'text-amber-600' : 'text-red-600'
-                              }`}>
-                                {req.verification_score}/100
-                              </span>
-                            ) : (
-                              <span className="text-gray-400 text-[10px]">–</span>
-                            )}
-                          </td>
-                          <td className="px-5 py-3.5">
-                            <span className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-semibold capitalize ${STATUS_STYLES[req.status] || 'bg-gray-100 text-gray-600'}`}>
-                              {req.status}
-                            </span>
-                          </td>
-                          <td className="px-5 py-3.5 text-right" onClick={e => e.stopPropagation()}>
-                            <div className="flex items-center justify-end gap-2">
-                              {req.status === 'submitted' && (
-                                <button
-                                  onClick={() => handleVerify(req.id)}
-                                  disabled={verifyingId === req.id}
-                                  className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-semibold rounded-lg transition disabled:opacity-50"
-                                >
-                                  {verifyingId === req.id ? 'Running…' : 'Verify'}
-                                </button>
-                              )}
-                              <button
-                                onClick={() => navigate(`/status/${req.id}`)}
-                                className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition"
-                              >
-                                <Eye size={13} />
-                              </button>
-                              <button className="p-1.5 text-gray-400 hover:text-gray-700">
-                                {isOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
+            <div style={{ display:'flex', flexDirection:'column', gap:'0.625rem' }}>
+              {filtered.map((req, i) => {
+                const fraud = req.fraud_score || 0;
+                const isHighRisk = fraud > 70;
+                const isExpanded = expandedRequest === req.id;
+                const student = studentDetails[req.student_id];
 
-                        {/* Expanded detail row */}
-                        {isOpen && (
-                          <tr className="bg-gray-50/60">
-                            <td colSpan={5} className="px-5 py-4 border-t border-gray-100">
-                              <div className="space-y-2 max-w-2xl">
-                                <p className="text-xs font-semibold text-gray-700">Description</p>
-                                <p className="text-xs text-gray-500 leading-relaxed">{req.description}</p>
-                                {fraud > 0 && (
-                                  <div className="flex items-center gap-2 pt-1">
-                                    <ShieldAlert size={12} className="text-red-400" />
-                                    <span className="text-[10px] text-red-500 font-medium">
-                                      Fraud Risk Score: {fraud}%
-                                    </span>
-                                  </div>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
+                return (
+                  <motion.div
+                    key={req.id}
+                    className="glass-card animate-fade-up"
+                    style={{ animationDelay:`${i*0.03}s`, overflow:'hidden', border: isHighRisk ? '1px solid rgba(239,68,68,0.25)' : undefined }}
+                  >
+                    {/* Main row */}
+                    <div style={{ padding:'1rem 1.25rem', display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:'1rem' }}>
+                      {/* Left */}
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:'0.625rem', marginBottom:'0.375rem', flexWrap:'wrap' }}>
+                          <h3 style={{ fontSize:'0.9375rem', fontWeight:700, color:'#e2e8f0', textTransform:'capitalize' }}>
+                            {(req.category||'').replace(/_/g,' ')}
+                          </h3>
+                          <span className={`badge ${STATUS_BADGE[req.status]||''}`}>{req.status}</span>
+                          {isHighRisk && (
+                            <span className="badge" style={{ background:'rgba(239,68,68,0.12)', color:'#f87171', border:'1px solid rgba(239,68,68,0.25)' }}>
+                              <AlertTriangle size={10} /> High Risk
+                            </span>
+                          )}
+                        </div>
+                        <p style={{ fontSize:'0.8rem', color:'#64748b', marginBottom:'0.5rem', display:'-webkit-box', WebkitLineClamp:1, WebkitBoxOrient:'vertical', overflow:'hidden' }}>
+                          {req.description}
+                        </p>
+                        <div style={{ display:'flex', alignItems:'center', gap:'1rem', fontSize:'0.8rem' }}>
+                          <span style={{ color:'#e2e8f0', fontWeight:700, fontFamily:'Outfit,sans-serif' }}>₹{(req.amount||0).toLocaleString()}</span>
+                          {req.verification_score && (
+                            <span style={{ color: req.verification_score >= 80 ? '#10b981' : req.verification_score >= 50 ? '#f59e0b' : '#ef4444', fontWeight:700 }}>
+                              <Sparkles size={12} style={{ display:'inline', marginRight:'3px' }} />
+                              AI {req.verification_score}/100
+                            </span>
+                          )}
+                          {fraud > 0 && (
+                            <span style={{ color: fraud > 70 ? '#ef4444' : fraud > 40 ? '#f59e0b' : '#10b981', fontWeight:600 }}>
+                              Risk {fraud}%
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Actions */}
+                      <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', flexShrink:0 }}>
+                        {req.status === 'submitted' && (
+                          <button
+                            onClick={() => handleVerify(req.id)}
+                            disabled={verifyingId === req.id}
+                            className="btn-primary"
+                            style={{ fontSize:'0.8rem', padding:'0.45rem 0.875rem' }}
+                          >
+                            {verifyingId === req.id
+                              ? <div style={{ width:'1rem', height:'1rem', border:'2px solid rgba(255,255,255,0.3)', borderTopColor:'white', borderRadius:'50%', animation:'spin 0.8s linear infinite' }} />
+                              : <><CheckCircle size={14} /> Verify</>
+                            }
+                          </button>
                         )}
-                      </React.Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
+                        <button
+                          onClick={() => navigate(`/status/${req.id}`)}
+                          className="icon-btn"
+                          title="View Status"
+                        >
+                          <Eye size={15} />
+                        </button>
+                        <button
+                          onClick={() => toggleExpand(req.id, req.student_id)}
+                          className="icon-btn"
+                          title="Student Details"
+                          style={{ color: isExpanded ? '#a5b4fc' : undefined, background: isExpanded ? 'rgba(99,102,241,0.12)' : undefined }}
+                        >
+                          {isExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Expanded student details */}
+                    {isExpanded && (
+                      <motion.div
+                        initial={{ height:0, opacity:0 }}
+                        animate={{ height:'auto', opacity:1 }}
+                        exit={{ height:0, opacity:0 }}
+                        transition={{ duration:0.25 }}
+                        style={{ borderTop:'1px solid rgba(255,255,255,0.06)', background:'rgba(99,102,241,0.04)', padding:'1.25rem' }}
+                      >
+                        <div style={{ display:'flex', alignItems:'center', gap:'0.625rem', marginBottom:'1rem' }}>
+                          <div style={{ width:'2rem', height:'2rem', borderRadius:'0.5rem', background:'rgba(99,102,241,0.15)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                            <User size={16} style={{ color:'#6366f1' }} />
+                          </div>
+                          <span style={{ fontWeight:700, color:'#e2e8f0', fontSize:'0.875rem' }}>Student Information</span>
+                        </div>
+
+                        {student ? (
+                          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))', gap:'0.625rem' }}>
+                            {infoRow('Full Name', student.full_name, User, '#6366f1')}
+                            {infoRow('Email', student.email, Mail, '#8b5cf6')}
+                            {infoRow('Institution', student.institution, Building, '#10b981')}
+                            {infoRow('Enrollment ID', student.enrollment_id, GraduationCap, '#f59e0b')}
+                            {infoRow('Joined', student.created_at ? new Date(student.created_at).toLocaleDateString() : null, Calendar, '#ec4899')}
+                            {infoRow('Request Count', requests.filter(r=>r.student_id===req.student_id).length, FileText, '#a5b4fc')}
+                          </div>
+                        ) : (
+                          <div style={{ display:'flex', justifyContent:'center', padding:'1.5rem' }}>
+                            <div style={{ width:'1.5rem', height:'1.5rem', border:'2px solid rgba(99,102,241,0.3)', borderTopColor:'#6366f1', borderRadius:'50%', animation:'spin 0.8s linear infinite' }} />
+                          </div>
+                        )}
+
+                        <div style={{ marginTop:'0.875rem', paddingTop:'0.875rem', borderTop:'1px solid rgba(255,255,255,0.06)', display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))', gap:'0.5rem' }}>
+                          <div style={{ fontSize:'0.8rem', color:'#64748b' }}>
+                            Deadline: <span style={{ color:'#e2e8f0', fontWeight:700 }}>{req.deadline_date ? new Date(req.deadline_date).toLocaleDateString() : '—'}</span>
+                          </div>
+                          <div style={{ fontSize:'0.8rem', color:'#64748b' }}>
+                            Submitted: <span style={{ color:'#e2e8f0', fontWeight:700 }}>{req.created_at ? new Date(req.created_at).toLocaleDateString() : '—'}</span>
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </motion.div>
+                );
+              })}
             </div>
           )}
         </div>
-
-      </main>
+      </div>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }

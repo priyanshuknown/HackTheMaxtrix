@@ -143,3 +143,84 @@ async def login(request: Request, data: LoginRequest, response: Response, db: An
 async def logout(response: Response):
     response.delete_cookie("access_token", httponly=True, secure=True, samesite="strict")
     return {"message": "Logged out successfully"}
+
+
+@router.get("/users/{user_id}")
+async def get_user_profile(
+    user_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Get user profile including student/funder details. Admin only."""
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
+
+    try:
+        uid = uuid.UUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid user ID format")
+
+    result = await db.execute(select(User).where(User.id == uid))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    resp = {
+        "id": str(user.id),
+        "email": user.email,
+        "full_name": user.full_name,
+        "role": user.role,
+        "created_at": str(user.created_at),
+    }
+
+    if user.role == "student":
+        sr = await db.execute(select(Student).where(Student.user_id == uid))
+        student = sr.scalar_one_or_none()
+        if student:
+            resp.update({
+                "institution": student.institution,
+                "enrollment_id": student.enrollment_id,
+                "academic_year": student.academic_year,
+                "request_count": student.request_count,
+            })
+
+    return resp
+
+
+@router.get("/students/by-student-id/{student_id}")
+async def get_student_by_student_id(
+    student_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Get user+student profile by the Student table UUID. Admin only."""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    try:
+        sid = uuid.UUID(student_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid student ID format")
+
+    sr = await db.execute(select(Student).where(Student.id == sid))
+    student = sr.scalar_one_or_none()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    ur = await db.execute(select(User).where(User.id == student.user_id))
+    user = ur.scalar_one_or_none()
+
+    return {
+        "id": str(user.id) if user else None,
+        "email": user.email if user else None,
+        "full_name": user.full_name if user else "Unknown",
+        "role": "student",
+        "created_at": str(user.created_at) if user else None,
+        "institution": student.institution,
+        "enrollment_id": student.enrollment_id,
+        "academic_year": student.academic_year,
+        "request_count": student.request_count,
+    }

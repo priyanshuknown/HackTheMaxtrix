@@ -1,153 +1,202 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { AlertCircle, Sparkles, ArrowRight } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { AlertCircle, ArrowRight, GraduationCap, Building2, Layers } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const CATEGORIES = [
-  { value: 'exam_fee', label: 'Exam Fee' },
-  { value: 'certification_fee', label: 'Certification' },
-  { value: 'device_repair', label: 'Device Repair' },
+  { value: 'exam_fee',         label: 'Exam Fee' },
+  { value: 'certification_fee',label: 'Certification' },
+  { value: 'device_repair',    label: 'Device Repair' },
   { value: 'interview_travel', label: 'Interview Travel' },
 ];
 
 export default function Register() {
   const [form, setForm] = useState({
     email: '', password: '', full_name: '', role: 'student',
-    institution: '', enrollment_id: '', org_name: '', funder_type: 'csr_program',
-    categories_supported: [],
+    institution: '', enrollment_id: '',
+    org_name: '', funder_type: 'csr_program', categories_supported: [],
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const { register } = useAuth();
   const navigate = useNavigate();
 
-  const set = (field) => (e) => setForm({ ...form, [field]: e.target.value });
-  const toggleCat = (cat) => {
-    const cats = form.categories_supported.includes(cat)
-      ? form.categories_supported.filter((c) => c !== cat)
-      : [...form.categories_supported, cat];
+  const set = (f) => (e) => setForm({ ...form, [f]: e.target.value });
+  const toggleCat = (c) => {
+    const cats = form.categories_supported.includes(c)
+      ? form.categories_supported.filter(x => x !== c)
+      : [...form.categories_supported, c];
     setForm({ ...form, categories_supported: cats });
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
+    e.preventDefault(); setError(''); setLoading(true);
     try {
       const data = await register(form);
       toast.success('Account created!');
-      const routes = { student: '/student/dashboard', funder: '/funder/dashboard', admin: '/funder/dashboard' };
-      navigate(routes[data.role] || '/');
+      navigate({ student: '/student/dashboard', funder: '/funder/dashboard' }[data.role] || '/');
     } catch (err) {
       setError(err.response?.data?.detail || 'Registration failed');
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
+  const labelStyle = { display:'block', fontSize:'0.72rem', fontWeight:700, color:'#64748b', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:'0.4rem' };
+  const sectionStyle = { background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.07)', borderRadius:'1rem', padding:'1.25rem' };
+
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 py-8 bg-[#F8FAFC]">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-6 animate-fade-in-up">
-          <div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-blue-600 flex items-center justify-center">
-            <Sparkles size={22} className="text-white" />
+    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', padding:'2rem 1.25rem', background:'#0a0a0f', backgroundImage:'radial-gradient(ellipse 60% 40% at 50% 0%, rgba(99,102,241,0.1) 0%, transparent 60%)' }}>
+      <motion.div
+        initial={{ opacity:0, y:20 }}
+        animate={{ opacity:1, y:0 }}
+        style={{ width:'100%', maxWidth:'560px' }}
+      >
+        {/* Header */}
+        <div style={{ textAlign:'center', marginBottom:'2rem' }}>
+          <div className="sidebar-logo-icon animate-pulse-glow" style={{ margin:'0 auto 1rem', width:'3rem', height:'3rem' }}>
+            <Layers size={22} style={{ color:'white' }} />
           </div>
-          <h1 className="text-2xl font-bold text-slate-900">Join VidyaFund AI</h1>
-          <p className="text-slate-500 text-sm mt-1">Institutional student-funding platform</p>
+          <h1 style={{ fontSize:'2rem', fontWeight:900, color:'#f1f5f9', fontFamily:'Outfit,sans-serif', marginBottom:'0.35rem' }}>
+            Join VidyaFund AI
+          </h1>
+          <p style={{ color:'#475569', fontSize:'0.875rem' }}>Verified, accountable educational funding</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="glass-card p-6 space-y-4 animate-fade-in-up stagger-1">
+        <div className="auth-card" style={{ maxWidth:'100%' }}>
           {error && (
-            <div className="flex items-center gap-2 p-3 rounded-lg bg-red-50 border border-red-200 text-red-600 text-sm">
-              <AlertCircle size={15} className="shrink-0" /> {error}
+            <div style={{ display:'flex', alignItems:'center', gap:'0.625rem', background:'rgba(239,68,68,0.1)', border:'1px solid rgba(239,68,68,0.2)', borderRadius:'0.75rem', padding:'0.75rem 1rem', marginBottom:'1.25rem', color:'#fca5a5', fontSize:'0.8rem' }}>
+              <AlertCircle size={16} style={{ flexShrink:0 }} />
+              {error}
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">Full Name</label>
-              <input value={form.full_name} onChange={set('full_name')} className="input-field" placeholder="Your name" required />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">Email</label>
-              <input type="email" value={form.email} onChange={set('email')} className="input-field" placeholder="you@example.com" required />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">Password</label>
-              <input type="password" value={form.password} onChange={set('password')} className="input-field" placeholder="Min 6 chars" required minLength={6} />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">Role</label>
-              <select value={form.role} onChange={set('role')} className="input-field bg-white">
-                <option value="student">Student</option>
-                <option value="funder">Institutional Funder</option>
-              </select>
-            </div>
-          </div>
-
-          {form.role === 'student' && (
-            <div className="grid grid-cols-2 gap-3 p-3 rounded-lg bg-emerald-50 border border-emerald-100 animate-fade-in">
+          <form onSubmit={handleSubmit}>
+            <div style={{ display:'flex', flexDirection:'column', gap:'1.25rem' }}>
+              {/* Role toggle */}
               <div>
-                <label className="block text-xs font-semibold text-emerald-700 mb-1.5">Institution</label>
-                <input value={form.institution} onChange={set('institution')} className="input-field" placeholder="University" required />
+                <label style={labelStyle}>Account Type</label>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.5rem' }}>
+                  {[
+                    { value:'student', label:'Student',   icon: GraduationCap, color:'#6366f1' },
+                    { value:'funder',  label:'Funder',    icon: Building2,     color:'#8b5cf6' },
+                  ].map(r => {
+                    const Icon = r.icon;
+                    const active = form.role === r.value;
+                    return (
+                      <button key={r.value} type="button" onClick={() => setForm({ ...form, role: r.value })}
+                        style={{
+                          display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.75rem 1rem',
+                          borderRadius:'0.75rem', fontWeight:700, fontSize:'0.875rem',
+                          border: active ? `1px solid ${r.color}40` : '1px solid rgba(255,255,255,0.07)',
+                          background: active ? `${r.color}15` : 'rgba(255,255,255,0.03)',
+                          color: active ? r.color : '#64748b', transition:'all 0.15s ease',
+                        }}
+                      >
+                        <Icon size={18} />{r.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-              <div>
-                <label className="block text-xs font-semibold text-emerald-700 mb-1.5">Enrollment ID</label>
-                <input value={form.enrollment_id} onChange={set('enrollment_id')} className="input-field" placeholder="STU-2024-001" required />
-              </div>
-            </div>
-          )}
 
-          {form.role === 'funder' && (
-            <div className="space-y-3 p-3 rounded-lg bg-blue-50 border border-blue-100 animate-fade-in">
-              <div className="grid grid-cols-2 gap-3">
+              {/* Basic info */}
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.875rem' }}>
                 <div>
-                  <label className="block text-xs font-semibold text-blue-700 mb-1.5">Organization</label>
-                  <input value={form.org_name} onChange={set('org_name')} className="input-field" placeholder="Org name" required />
+                  <label style={labelStyle}>Full Name</label>
+                  <input value={form.full_name} onChange={set('full_name')} className="input-dark" placeholder="Your name" required style={{ height:'2.75rem' }} />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-blue-700 mb-1.5">Funder Type</label>
-                  <select value={form.funder_type} onChange={set('funder_type')} className="input-field bg-white">
-                    <option value="csr_program">CSR Program</option>
-                    <option value="alumni_association">Alumni Association</option>
-                    <option value="college_welfare">College Welfare</option>
-                  </select>
+                  <label style={labelStyle}>Email</label>
+                  <input type="email" value={form.email} onChange={set('email')} className="input-dark" placeholder="you@example.com" required style={{ height:'2.75rem' }} />
                 </div>
               </div>
+
               <div>
-                <label className="block text-xs font-semibold text-blue-700 mb-1.5">Categories You Fund</label>
-                <div className="flex flex-wrap gap-1.5">
-                  {CATEGORIES.map((c) => (
-                    <button key={c.value} type="button" onClick={() => toggleCat(c.value)}
-                      className={`px-2.5 py-1 rounded text-xs font-semibold border transition-colors
-                        ${form.categories_supported.includes(c.value)
-                          ? 'bg-blue-600 text-white border-blue-600'
-                          : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300'}`}>
-                      {c.label}
-                    </button>
-                  ))}
-                </div>
+                <label style={labelStyle}>Password</label>
+                <input type="password" value={form.password} onChange={set('password')} className="input-dark" placeholder="Min 6 characters" required minLength={6} style={{ height:'2.75rem' }} />
               </div>
+
+              {/* Student Fields */}
+              {form.role === 'student' && (
+                <div style={sectionStyle}>
+                  <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'1rem' }}>
+                    <GraduationCap size={16} style={{ color:'#6366f1' }} />
+                    <span style={{ fontWeight:700, color:'#a5b4fc', fontSize:'0.875rem' }}>Student Details</span>
+                  </div>
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.875rem' }}>
+                    <div>
+                      <label style={labelStyle}>Institution</label>
+                      <input value={form.institution} onChange={set('institution')} className="input-dark" placeholder="University name" required style={{ height:'2.75rem' }} />
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Enrollment ID</label>
+                      <input value={form.enrollment_id} onChange={set('enrollment_id')} className="input-dark" placeholder="STU-2024-001" required style={{ height:'2.75rem' }} />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Funder Fields */}
+              {form.role === 'funder' && (
+                <div style={sectionStyle}>
+                  <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'1rem' }}>
+                    <Building2 size={16} style={{ color:'#8b5cf6' }} />
+                    <span style={{ fontWeight:700, color:'#c4b5fd', fontSize:'0.875rem' }}>Funder Details</span>
+                  </div>
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.875rem', marginBottom:'0.875rem' }}>
+                    <div>
+                      <label style={labelStyle}>Organization Name</label>
+                      <input value={form.org_name} onChange={set('org_name')} className="input-dark" placeholder="Organization" required style={{ height:'2.75rem' }} />
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Funder Type</label>
+                      <select value={form.funder_type} onChange={set('funder_type')} className="input-dark" style={{ height:'2.75rem' }}>
+                        <option value="csr_program">CSR Program</option>
+                        <option value="alumni_association">Alumni Association</option>
+                        <option value="college_welfare">College Welfare</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Categories You Fund</label>
+                    <div style={{ display:'flex', flexWrap:'wrap', gap:'0.5rem', marginTop:'0.35rem' }}>
+                      {CATEGORIES.map(c => {
+                        const active = form.categories_supported.includes(c.value);
+                        return (
+                          <button key={c.value} type="button" onClick={() => toggleCat(c.value)}
+                            style={{
+                              padding:'0.4rem 0.875rem', borderRadius:'0.5rem', fontSize:'0.8rem', fontWeight:600,
+                              border: active ? '1px solid rgba(139,92,246,0.4)' : '1px solid rgba(255,255,255,0.07)',
+                              background: active ? 'rgba(139,92,246,0.15)' : 'rgba(255,255,255,0.04)',
+                              color: active ? '#c4b5fd' : '#64748b', transition:'all 0.15s ease',
+                            }}
+                          >
+                            {c.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <button type="submit" disabled={loading} className="btn-primary" style={{ width:'100%', height:'2.875rem', fontSize:'0.9rem' }}>
+                {loading
+                  ? <div style={{ width:'1.25rem', height:'1.25rem', border:'2px solid rgba(255,255,255,0.3)', borderTopColor:'white', borderRadius:'50%', animation:'spin 0.8s linear infinite' }} />
+                  : <><span>Create Account</span><ArrowRight size={16} /></>
+                }
+              </button>
+
+              <p style={{ textAlign:'center', fontSize:'0.8rem', color:'#475569' }}>
+                Already registered?{' '}
+                <Link to="/login" style={{ color:'#a5b4fc', fontWeight:700, textDecoration:'none' }}>Sign In</Link>
+              </p>
             </div>
-          )}
-
-          <button type="submit" disabled={loading} className="btn-primary w-full flex items-center justify-center gap-2 py-2.5">
-            {loading ? (
-              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-            ) : (
-              <>Create Account <ArrowRight size={16} /></>
-            )}
-          </button>
-
-          <p className="text-center text-xs text-slate-500">
-            Already registered? <Link to="/login" className="text-blue-600 hover:text-blue-700 font-semibold">Sign In</Link>
-          </p>
-        </form>
-      </div>
+          </form>
+        </div>
+      </motion.div>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }

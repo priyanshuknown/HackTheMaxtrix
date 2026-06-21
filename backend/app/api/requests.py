@@ -255,11 +255,13 @@ async def list_requests(
     return [
         {
             "id": str(r.id),
+            "student_id": str(r.student_id),
             "category": r.category,
             "amount": r.amount,
             "description": r.description,
             "deadline_date": str(r.deadline_date),
             "verification_score": r.verification_score,
+            "fraud_score": r.fraud_score,
             "urgency_level": r.urgency_level,
             "review_flag": r.review_flag,
             "status": r.status,
