@@ -1,285 +1,281 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 import {
-  Sparkles, Search, Bell, Sun, LayoutDashboard, Compass,
-  Wallet, Star, FileText, MessageSquare, BarChart2, Users,
-  Settings, HelpCircle, Heart, ArrowUpRight, ChevronDown,
-  Share2, IndianRupee, HandHeart, ShieldCheck, Clock, Zap,
-  CheckCircle2, Eye, MoreVertical, BookOpen, Award, Wrench, Plane, Map, Plus
+  Layers, LogOut, Users, IndianRupee, HandHeart,
+  CheckCircle2, ShieldCheck, Zap, ChevronRight, History
 } from 'lucide-react';
-import {
-  PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip
-} from 'recharts';
 
-const PIE_COLORS = ['#3B82F6', '#8B5CF6', '#10B981', '#F59E0B'];
+const CAT_LABELS = {
+  exam_fee: 'Exam Fee',
+  certification_fee: 'Certification',
+  device_repair: 'Device Repair',
+  interview_travel: 'Interview Travel',
+};
 
-const CAT_META = {
-  exam_fee: { icon: BookOpen, label: 'Exam Fee', color: 'text-blue-600', bg: 'bg-blue-50' },
-  certification_fee: { icon: Award, label: 'Certification', color: 'text-purple-600', bg: 'bg-purple-50' },
-  device_repair: { icon: Wrench, label: 'Device Repair', color: 'text-amber-600', bg: 'bg-amber-50' },
-  interview_travel: { icon: Plane, label: 'Interview Travel', color: 'text-emerald-600', bg: 'bg-emerald-50' },
+const CAT_COLORS = {
+  exam_fee: 'bg-blue-50 text-blue-700',
+  certification_fee: 'bg-violet-50 text-violet-700',
+  device_repair: 'bg-amber-50 text-amber-700',
+  interview_travel: 'bg-emerald-50 text-emerald-700',
 };
 
 export default function FunderDashboard() {
+  const [tab, setTab] = useState('discover');
   const [actionLoading, setActionLoading] = useState({});
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const { data: requests = [], isLoading: loading } = useQuery({
-    queryKey: ['requests'],
+  const { data: requests = [], isLoading } = useQuery({
+    queryKey: ['funder-requests'],
     queryFn: async () => {
-      try {
-        const res = await api.get('/requests');
-        return Array.isArray(res.data) ? res.data : [];
-      } catch (err) {
-        toast.error('Failed to load requests');
-        return [];
-      }
-    }
+      const res = await api.get('/requests');
+      return Array.isArray(res.data) ? res.data : [];
+    },
+    onError: () => toast.error('Failed to load requests'),
   });
 
-  async function handleAction(id, type) {
-    setActionLoading(p => ({ ...p, [`${type}_${id}`]: true }));
+  const handleDisburse = async (id) => {
+    setActionLoading(p => ({ ...p, [id]: true }));
     try {
-      if (type === 'approve') {
-        const matchRes = await api.get(`/match/${id}`);
-        const topMatch = matchRes.data.matches?.[0];
-        if (!topMatch) throw new Error('No matches found');
-        const res = await api.post(`/disburse/${topMatch.match_id}`);
-        await api.post('/verify-payment', {
-          razorpay_order_id: res.data.razorpay_order_id,
-          razorpay_payment_id: `pay_mock_${Date.now()}`,
-          razorpay_signature: 'mock_signature',
-        });
-        toast.success('Funds disbursed!');
-      } else if (type === 'impact') {
-        const res = await api.get(`/impact/${id}`);
-        if (res.data.report_url) window.open(`http://localhost:8000${res.data.report_url}`, '_blank');
-      }
-      queryClient.invalidateQueries({ queryKey: ['requests'] });
+      const matchRes = await api.get(`/match/${id}`);
+      const topMatch = matchRes.data.matches?.[0];
+      if (!topMatch) throw new Error('No matches found');
+      const res = await api.post(`/disburse/${topMatch.match_id}`);
+      await api.post('/verify-payment', {
+        razorpay_order_id: res.data.razorpay_order_id,
+        razorpay_payment_id: `pay_mock_${Date.now()}`,
+        razorpay_signature: 'mock_signature',
+      });
+      toast.success('✅ Funds disbursed to student institute!');
+      queryClient.invalidateQueries(['funder-requests']);
     } catch (err) {
-      toast.error(err.response?.data?.detail || err.message || 'Action failed');
+      toast.error(err.response?.data?.detail || err.message || 'Disbursement failed');
     } finally {
-      setActionLoading(p => ({ ...p, [`${type}_${id}`]: false }));
+      setActionLoading(p => ({ ...p, [id]: false }));
     }
-  }
+  };
 
-  const totalDisbursed = requests.filter(r => ['disbursed', 'completed'].includes(r.status)).reduce((s, r) => s + (r.amount || 0), 0);
-  const studentsHelped = requests.filter(r => ['disbursed', 'completed'].includes(r.status)).length;
-  const verifiedRequests = requests.filter(r => r.status === 'verified');
-
-  const pieData = [
-    { name: 'Exam Fees', value: 40 },
-    { name: 'Certifications', value: 30 },
-    { name: 'Devices', value: 20 },
-    { name: 'Travel', value: 10 },
-  ];
-  
-  const barData = [
-    { name: 'Jan', impact: 40 },
-    { name: 'Feb', impact: 30 },
-    { name: 'Mar', impact: 20 },
-    { name: 'Apr', impact: 27 },
-    { name: 'May', impact: 18 },
-    { name: 'Jun', impact: 23 },
-  ];
-
-  if (loading) return (
-    <div className="flex items-center justify-center h-screen bg-slate-50">
-      <div className="w-8 h-8 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
-    </div>
-  );
+  const pending = requests.filter(r => ['verified', 'matched', 'approved'].includes(r.status));
+  const history = requests.filter(r => ['disbursed', 'completed'].includes(r.status));
+  const totalDisbursed = history.reduce((s, r) => s + (r.amount || 0), 0);
 
   return (
-    <div className="flex h-screen bg-slate-50 text-slate-900 overflow-hidden font-sans">
-      
-      {/* ── Sidebar ── */}
-      <aside className="w-64 bg-slate-900 text-white flex flex-col hidden md:flex">
-        <div className="p-6 flex items-center gap-3 border-b border-slate-800">
-          <div className="w-8 h-8 rounded-lg bg-indigo-500 flex items-center justify-center shadow-md">
-            <Heart size={16} className="text-white" />
-          </div>
-          <span className="font-bold text-lg tracking-tight">VidyaFund AI</span>
-        </div>
-        
-        <nav className="flex-1 overflow-y-auto px-4 py-6 space-y-2">
-          <a href="#" className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-indigo-600 text-white font-medium">
-            <LayoutDashboard size={18} /> Impact Dashboard
-          </a>
-          <a href="#" className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white font-medium transition">
-            <Compass size={18} /> Discover Needs
-          </a>
-          <a href="#" className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white font-medium transition">
-            <Wallet size={18} /> Contributions
-          </a>
-          <a href="#" className="flex items-center justify-between px-3 py-2.5 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white font-medium transition">
-            <div className="flex items-center gap-3"><FileText size={18} /> Impact Reports</div>
-          </a>
-          <a href="#" className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white font-medium transition">
-            <Users size={18} /> Fellow Funders
-          </a>
-        </nav>
-      </aside>
+    <div className="min-h-screen bg-gray-50 font-sans">
 
-      {/* ── Main ── */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
-        <div className="p-8 max-w-7xl mx-auto w-full">
-          
-          <div className="flex items-center justify-between mb-8">
-            <div>
-              <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Your Philanthropic Impact</h1>
-              <p className="text-sm text-slate-500 mt-1">Review your contributions and discover new AI-verified opportunities.</p>
+      {/* ── Topbar ── */}
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
+        <div className="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 bg-indigo-600 rounded-lg flex items-center justify-center">
+              <Layers size={14} className="text-white" />
             </div>
-            <button className="bg-indigo-600 text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-indigo-700 shadow-md transition flex items-center gap-2">
-              <Plus size={16} /> Add Funds
+            <span className="font-bold text-gray-900 text-sm">VidyaFund</span>
+            <span className="text-gray-300 text-sm">·</span>
+            <span className="text-gray-500 text-xs font-medium">Funder Portal</span>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <div className="w-7 h-7 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-xs">
+              {user?.full_name?.charAt(0) || 'F'}
+            </div>
+            <button
+              onClick={() => { logout(); navigate('/login'); }}
+              className="text-xs text-gray-400 hover:text-red-500 transition flex items-center gap-1"
+            >
+              <LogOut size={13} /> Logout
             </button>
           </div>
-          
-          {/* KPI Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
-            {[
-              { title: 'Students Helped', value: studentsHelped || 12, icon: Users, color: 'text-indigo-600', bg: 'bg-indigo-100' },
-              { title: 'Total Contributions', value: `₹${(totalDisbursed || 125000).toLocaleString()}`, icon: Wallet, color: 'text-emerald-600', bg: 'bg-emerald-100' },
-              { title: 'Impact Score', value: '94/100', icon: Star, color: 'text-amber-600', bg: 'bg-amber-100' },
-              { title: 'Requests Funded', value: studentsHelped || 15, icon: HandHeart, color: 'text-blue-600', bg: 'bg-blue-100' },
-            ].map((kpi, idx) => (
-              <motion.div 
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: idx * 0.1 }}
-                key={idx} 
-                className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between hover:shadow-md transition"
-              >
-                <div>
-                  <p className="text-sm font-medium text-slate-500 mb-1">{kpi.title}</p>
-                  <h3 className="text-2xl font-bold text-slate-900">{kpi.value}</h3>
-                </div>
-                <div className={`p-3 rounded-xl ${kpi.bg}`}>
-                  <kpi.icon className={`w-6 h-6 ${kpi.color}`} />
-                </div>
-              </motion.div>
-            ))}
-          </div>
+        </div>
+      </header>
 
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-            {/* Left: AI Recommended Requests */}
-            <div className="xl:col-span-2 space-y-6">
-              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <Sparkles size={18} className="text-indigo-500" /> AI Recommended for You
-              </h3>
-              
-              <div className="space-y-4">
-                {verifiedRequests.length > 0 ? verifiedRequests.slice(0, 3).map((req, i) => {
-                  const cat = CAT_META[req.category] || {};
-                  const CatIcon = cat.icon || BookOpen;
-                  
+      <main className="max-w-5xl mx-auto px-6 py-8 space-y-8">
+
+        {/* ── Greeting + Stats ── */}
+        <div>
+          <h1 className="text-xl font-bold text-gray-900">
+            Welcome, {user?.full_name?.split(' ')[0] || 'Partner'}
+          </h1>
+          <p className="text-sm text-gray-500 mt-0.5">Fund verified student requests and track your impact.</p>
+        </div>
+
+        {/* Stats */}
+        <div className="grid grid-cols-3 gap-4">
+          {[
+            { label: 'Requests Waiting', value: pending.length, icon: HandHeart, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+            { label: 'Students Helped', value: history.length, icon: Users, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+            { label: 'Total Disbursed', value: `₹${totalDisbursed.toLocaleString()}`, icon: IndianRupee, color: 'text-blue-600', bg: 'bg-blue-50' },
+          ].map((s, i) => (
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.07 }}
+              className="bg-white rounded-xl border border-gray-200 p-4"
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <div className={`w-7 h-7 rounded-lg ${s.bg} flex items-center justify-center`}>
+                  <s.icon size={13} className={s.color} />
+                </div>
+                <span className="text-xs text-gray-500">{s.label}</span>
+              </div>
+              <p className="text-xl font-bold text-gray-900">{s.value}</p>
+            </motion.div>
+          ))}
+        </div>
+
+        {/* ── Tab Switcher ── */}
+        <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
+          {[
+            { key: 'discover', label: 'Discovery Feed', icon: HandHeart },
+            { key: 'history', label: 'My Contributions', icon: History },
+          ].map(t => (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold transition ${
+                tab === t.key
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <t.icon size={13} />
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* ── Discovery Feed ── */}
+        {tab === 'discover' && (
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-sm font-semibold text-gray-700">Verified Student Requests</h2>
+              <span className="text-xs text-gray-400">{pending.length} requests waiting</span>
+            </div>
+
+            {isLoading ? (
+              <div className="flex justify-center py-12">
+                <div className="w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : pending.length === 0 ? (
+              <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
+                <CheckCircle2 size={32} className="text-emerald-400 mx-auto mb-3" />
+                <p className="text-sm font-semibold text-gray-700">All caught up!</p>
+                <p className="text-xs text-gray-400 mt-1">No requests are waiting for funding right now.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {pending.map((req, i) => {
+                  const catLabel = CAT_LABELS[req.category] || req.category;
+                  const catColor = CAT_COLORS[req.category] || 'bg-gray-50 text-gray-600';
+                  const matchPct = req.verification_score ? Math.min(98, req.verification_score + 5) : 87;
+
                   return (
-                    <motion.div 
-                      initial={{ opacity: 0, y: 10 }}
+                    <motion.div
+                      key={req.id}
+                      initial={{ opacity: 0, y: 8 }}
                       animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: i * 0.1 }}
-                      key={req.id} 
-                      className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm hover:border-indigo-300 transition"
+                      transition={{ delay: i * 0.06 }}
+                      className="bg-white rounded-xl border border-gray-200 p-5 hover:border-indigo-300 hover:shadow-sm transition"
                     >
-                      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-4">
-                        <div className="flex items-center gap-4">
-                          <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${cat.bg || 'bg-blue-50'}`}>
-                            <CatIcon size={24} className={cat.color || 'text-blue-600'} />
-                          </div>
-                          <div>
-                            <h4 className="text-base font-bold text-slate-900">{cat.label || req.category} Student Request</h4>
-                            <p className="text-sm text-slate-500 mt-0.5 line-clamp-1">{req.description}</p>
-                          </div>
+                      {/* Top row */}
+                      <div className="flex items-start justify-between gap-4 mb-3">
+                        <div className="flex items-start gap-3 min-w-0">
+                          <span className={`shrink-0 px-2.5 py-1 rounded-lg text-xs font-semibold ${catColor}`}>
+                            {catLabel}
+                          </span>
+                          <p className="text-xs text-gray-500 leading-relaxed line-clamp-2">{req.description}</p>
                         </div>
-                        <div className="text-right">
-                          <div className="text-xl font-bold text-slate-900">₹{(req.amount || 0).toLocaleString()}</div>
-                          <span className="text-xs font-semibold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full mt-1 inline-block">High Urgency</span>
-                        </div>
+                        <p className="text-lg font-bold text-gray-900 shrink-0">₹{(req.amount || 0).toLocaleString()}</p>
                       </div>
-                      
-                      <div className="flex flex-wrap gap-4 mt-6 pt-4 border-t border-slate-100">
-                        <div className="flex items-center gap-2 text-sm text-slate-600">
-                          <ShieldCheck size={16} className="text-emerald-500" />
-                          <span>AI Verified</span>
+
+                      {/* Signals */}
+                      <div className="flex items-center gap-4 mb-4 text-xs text-gray-500">
+                        <div className="flex items-center gap-1">
+                          <ShieldCheck size={12} className="text-emerald-500" />
+                          AI Verified
                         </div>
-                        <div className="flex items-center gap-2 text-sm text-slate-600">
-                          <Zap size={16} className="text-indigo-500" />
-                          <span>92 Impact Score</span>
+                        <div className="flex items-center gap-1">
+                          <Zap size={12} className="text-amber-500" />
+                          Score: {req.verification_score || '—'}/100
                         </div>
-                        <button 
-                          onClick={() => handleAction(req.id, 'approve')} 
-                          disabled={actionLoading[`approve_${req.id}`]}
-                          className="ml-auto bg-indigo-600 text-white px-6 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition shadow-sm disabled:opacity-50"
+                        <div className="flex items-center gap-1">
+                          <HandHeart size={12} className="text-indigo-500" />
+                          {matchPct}% match
+                        </div>
+                        <span className="ml-auto text-[10px] text-red-500 font-medium bg-red-50 px-2 py-0.5 rounded-full">
+                          Urgent
+                        </span>
+                      </div>
+
+                      {/* Action */}
+                      <div className="pt-3 border-t border-gray-100 flex items-center justify-between">
+                        <p className="text-[10px] text-gray-400">Academic Year: {req.academic_year}</p>
+                        <button
+                          onClick={() => handleDisburse(req.id)}
+                          disabled={actionLoading[req.id]}
+                          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-4 py-2 rounded-lg transition disabled:opacity-50"
                         >
-                          {actionLoading[`approve_${req.id}`] ? 'Funding...' : 'Fund Request'}
+                          {actionLoading[req.id] ? 'Processing…' : 'Disburse Funds'}
+                          {!actionLoading[req.id] && <ChevronRight size={13} />}
                         </button>
                       </div>
                     </motion.div>
-                  )
-                }) : (
-                  <div className="bg-white rounded-xl border border-slate-200 p-12 text-center shadow-sm">
-                    <p className="text-slate-500">No verified requests matching your criteria right now.</p>
-                  </div>
-                )}
+                  );
+                })}
               </div>
+            )}
+          </div>
+        )}
+
+        {/* ── History Tab ── */}
+        {tab === 'history' && (
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-sm font-semibold text-gray-700">Contribution History</h2>
+              <span className="text-xs text-gray-400">{history.length} disbursements</span>
             </div>
 
-            {/* Right: Impact Analytics */}
-            <div className="space-y-6">
-              <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-                <h3 className="text-sm font-bold text-slate-900 mb-6">Funding Success Rate</h3>
-                <div className="h-48 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={barData}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
-                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748B', fontSize: 12}} />
-                      <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748B', fontSize: 12}} />
-                      <RechartsTooltip cursor={{fill: '#F8FAFC'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}} />
-                      <Bar dataKey="impact" fill="#4F46E5" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
+            {history.length === 0 ? (
+              <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
+                <p className="text-sm font-semibold text-gray-700">No contributions yet</p>
+                <p className="text-xs text-gray-400 mt-1">Switch to Discovery Feed to start funding students.</p>
               </div>
-
-              <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-                <h3 className="text-sm font-bold text-slate-900 mb-4 flex items-center justify-between">
-                  Category Impact
-                  <span className="text-xs font-normal text-indigo-600 cursor-pointer">Detailed Report</span>
-                </h3>
-                <div className="space-y-4">
-                  {pieData.map((item, idx) => (
-                    <div key={idx}>
-                      <div className="flex justify-between text-sm mb-1.5">
-                        <span className="font-medium text-slate-700">{item.name}</span>
-                        <span className="text-slate-500">{item.value}%</span>
+            ) : (
+              <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100 overflow-hidden">
+                {history.map((req, i) => (
+                  <motion.div
+                    key={req.id}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: i * 0.04 }}
+                    className="flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center">
+                        <CheckCircle2 size={14} className="text-emerald-600" />
                       </div>
-                      <div className="w-full bg-slate-100 rounded-full h-1.5">
-                        <div className="bg-indigo-500 h-1.5 rounded-full" style={{ width: `${item.value}%` }}></div>
+                      <div>
+                        <p className="text-sm font-semibold text-gray-800">
+                          {CAT_LABELS[req.category] || req.category}
+                        </p>
+                        <p className="text-[10px] text-gray-400">Student #{req.student_id?.substring(0, 8)}</p>
                       </div>
                     </div>
-                  ))}
-                </div>
+                    <p className="text-sm font-bold text-emerald-700">₹{(req.amount || 0).toLocaleString()}</p>
+                  </motion.div>
+                ))}
               </div>
-
-              <div className="bg-gradient-to-br from-indigo-900 to-slate-900 rounded-xl p-6 text-white shadow-lg flex items-center justify-between">
-                <div>
-                  <h3 className="font-bold mb-1">Impact Map Available</h3>
-                  <p className="text-xs text-indigo-200">See where your funds are making a difference across institutions.</p>
-                </div>
-                <div className="p-3 bg-white/10 rounded-full cursor-pointer hover:bg-white/20 transition">
-                  <Map size={24} className="text-indigo-300" />
-                </div>
-              </div>
-            </div>
+            )}
           </div>
-        </div>
-      </div>
+        )}
+
+      </main>
     </div>
   );
 }

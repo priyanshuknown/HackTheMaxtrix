@@ -1,285 +1,266 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { 
-  Users, Activity, ShieldAlert, CheckCircle, 
-  Clock, DollarSign, BarChart2, AlertTriangle, 
-  Search, Filter, ChevronRight, Eye, ShieldCheck, XCircle,
-  LogOut, Sparkles, LayoutDashboard
+import {
+  Users, Clock, ShieldAlert, IndianRupee,
+  Search, Eye, LogOut, RefreshCw, CheckCircle2,
+  Layers, ChevronDown, ChevronUp
 } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import api from '../api/client';
 import toast from 'react-hot-toast';
 
-const mockTrendData = [
-  { name: 'Mon', requests: 4, fraud: 1 },
-  { name: 'Tue', requests: 7, fraud: 0 },
-  { name: 'Wed', requests: 5, fraud: 2 },
-  { name: 'Thu', requests: 12, fraud: 1 },
-  { name: 'Fri', requests: 8, fraud: 3 },
-  { name: 'Sat', requests: 3, fraud: 0 },
-  { name: 'Sun', requests: 9, fraud: 2 },
-];
+const STATUS_STYLES = {
+  submitted: 'bg-amber-50 text-amber-700 border border-amber-200',
+  verified: 'bg-indigo-50 text-indigo-700 border border-indigo-200',
+  matched: 'bg-blue-50 text-blue-700 border border-blue-200',
+  approved: 'bg-violet-50 text-violet-700 border border-violet-200',
+  disbursed: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
+  completed: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
+  rejected: 'bg-rose-50 text-rose-700 border border-rose-200',
+};
 
 export default function AdminDashboard() {
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const [search, setSearch] = useState('');
+  const [expanded, setExpanded] = useState(null);
+  const [verifyingId, setVerifyingId] = useState(null);
 
-  const { data: requests = [], isLoading: loading } = useQuery({
-    queryKey: ['requests'],
+  const { data: requests = [], isLoading } = useQuery({
+    queryKey: ['admin-requests'],
     queryFn: async () => {
-      try {
-        const res = await api.get('/requests');
-        return Array.isArray(res.data) ? res.data : [];
-      } catch (err) {
-        toast.error('Failed to load requests');
-        return [];
-      }
-    }
+      const res = await api.get('/requests');
+      return Array.isArray(res.data) ? res.data : [];
+    },
+    onError: () => toast.error('Failed to load requests'),
   });
 
   const handleVerify = async (id) => {
+    setVerifyingId(id);
     try {
       await api.post(`/verify/${id}`);
-      toast.success('AI Verification Complete');
-      queryClient.invalidateQueries({ queryKey: ['requests'] });
-    } catch (err) {
+      toast.success('AI verification complete!');
+      queryClient.invalidateQueries(['admin-requests']);
+    } catch {
       toast.error('Verification failed');
+    } finally {
+      setVerifyingId(null);
     }
   };
 
-  const kpis = [
-    { title: 'Total Requests', value: '1,284', icon: Users, color: 'text-blue-600', bg: 'bg-blue-100' },
-    { title: 'Pending Review', value: '42', icon: Clock, color: 'text-amber-600', bg: 'bg-amber-100' },
-    { title: 'High Risk', value: '14', icon: ShieldAlert, color: 'text-red-600', bg: 'bg-red-100' },
-    { title: 'Total Disbursed', value: '₹4.2M', icon: DollarSign, color: 'text-emerald-600', bg: 'bg-emerald-100' },
-  ];
+  const total = requests.length;
+  const pending = requests.filter(r => r.status === 'submitted').length;
+  const flagged = requests.filter(r => (r.fraud_score || 0) > 70).length;
+  const disbursed = requests
+    .filter(r => ['disbursed', 'completed'].includes(r.status))
+    .reduce((s, r) => s + (r.amount || 0), 0);
+
+  const filtered = requests.filter(r =>
+    (r.description || '').toLowerCase().includes(search.toLowerCase()) ||
+    (r.category || '').toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
-      
-      {/* ── Top Header ── */}
-      <header className="bg-slate-900 text-white sticky top-0 z-50 shadow-md">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-indigo-500 flex items-center justify-center">
-              <Sparkles size={16} className="text-white" />
+    <div className="min-h-screen bg-gray-50 font-sans">
+
+      {/* ── Topbar ── */}
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
+        <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 bg-indigo-600 rounded-lg flex items-center justify-center">
+              <Layers size={14} className="text-white" />
             </div>
-            <span className="font-bold text-lg tracking-tight">VidyaFund Operations</span>
-            <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300 font-bold uppercase tracking-wider">
-              Admin Panel
-            </span>
+            <span className="font-bold text-gray-900 text-sm">VidyaFund</span>
+            <span className="text-gray-300 text-sm">·</span>
+            <span className="text-gray-500 text-xs font-medium">Admin</span>
           </div>
-          
-          <div className="flex items-center gap-4">
-            <Link to="/funder/dashboard" className="text-sm font-semibold text-slate-300 hover:text-white transition flex items-center gap-2">
-              <LayoutDashboard size={15} /> Funder View
-            </Link>
-            <div className="w-px h-6 bg-slate-800"></div>
-            <button 
+
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-gray-500 hidden sm:block">
+              {user?.full_name || 'Admin'}
+            </span>
+            <button
               onClick={() => { logout(); navigate('/login'); }}
-              className="text-sm font-semibold text-rose-400 hover:text-rose-300 transition flex items-center gap-1.5"
+              className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-red-600 transition font-medium"
             >
-              <LogOut size={15} /> Logout
+              <LogOut size={14} />
+              Logout
             </button>
           </div>
         </div>
       </header>
 
-      <main className="flex-1 max-w-7xl mx-auto w-full p-6 sm:p-8 space-y-6">
-        
-        {/* Header Title */}
-        <div className="flex justify-between items-center">
+      <main className="max-w-6xl mx-auto px-6 py-8 space-y-8">
+
+        {/* ── Page Title ── */}
+        <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Admin Operations</h1>
-            <p className="text-slate-500 text-sm mt-0.5">Monitor pipeline, AI insights, and fraud alerts.</p>
+            <h1 className="text-xl font-bold text-gray-900">Requests Pipeline</h1>
+            <p className="text-sm text-gray-500 mt-0.5">Review and verify student funding requests</p>
           </div>
-          <button className="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-800 transition">
-            Generate Report
+          <button
+            onClick={() => queryClient.invalidateQueries(['admin-requests'])}
+            className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition"
+          >
+            <RefreshCw size={13} />
+            Refresh
           </button>
         </div>
 
-        {/* KPI Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {kpis.map((kpi, idx) => (
-            <motion.div 
-              initial={{ opacity: 0, y: 20 }}
+        {/* ── KPI Cards ── */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {[
+            { label: 'Total Requests', value: total, icon: Users, color: 'text-blue-600', bg: 'bg-blue-50' },
+            { label: 'Pending Review', value: pending, icon: Clock, color: 'text-amber-600', bg: 'bg-amber-50' },
+            { label: 'High Risk', value: flagged, icon: ShieldAlert, color: 'text-red-600', bg: 'bg-red-50' },
+            { label: 'Total Disbursed', value: `₹${disbursed.toLocaleString()}`, icon: IndianRupee, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+          ].map((kpi, i) => (
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: idx * 0.1 }}
-              key={idx} 
-              className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex items-center space-x-4 hover:shadow-md transition"
+              transition={{ delay: i * 0.06 }}
+              className="bg-white rounded-xl border border-gray-200 p-4"
             >
-              <div className={`p-3 rounded-full ${kpi.bg}`}>
-                <kpi.icon className={`w-6 h-6 ${kpi.color}`} />
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs text-gray-500 font-medium">{kpi.label}</span>
+                <div className={`w-7 h-7 rounded-lg ${kpi.bg} flex items-center justify-center`}>
+                  <kpi.icon size={14} className={kpi.color} />
+                </div>
               </div>
-              <div>
-                <p className="text-sm font-medium text-slate-500">{kpi.title}</p>
-                <h3 className="text-2xl font-bold text-slate-900">{kpi.value}</h3>
-              </div>
+              <p className="text-2xl font-bold text-gray-900">{kpi.value}</p>
             </motion.div>
           ))}
         </div>
 
-        {/* Charts & AI Insights */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Main Chart */}
-          <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-            <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center">
-              <Activity className="w-5 h-5 mr-2 text-indigo-500" />
-              Funding Request Pipeline
-            </h3>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={mockTrendData}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748B'}} />
-                  <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748B'}} />
-                  <Tooltip 
-                    contentStyle={{ borderRadius: '0.5rem', border: 'none', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
-                  />
-                  <Line type="monotone" dataKey="requests" stroke="#2563EB" strokeWidth={3} dot={false} activeDot={{r: 6}} />
-                  <Line type="monotone" dataKey="fraud" stroke="#EF4444" strokeWidth={3} dot={false} />
-                </LineChart>
-              </ResponsiveContainer>
+        {/* ── Requests Table ── */}
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+
+          {/* Table toolbar */}
+          <div className="px-5 py-4 border-b border-gray-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <h2 className="text-sm font-semibold text-gray-800">All Funding Requests</h2>
+            <div className="relative w-full sm:w-60">
+              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search by category or description…"
+                className="w-full pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              />
             </div>
           </div>
 
-          {/* AI Fraud Widget */}
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col justify-between">
-            <div>
-              <h3 className="text-lg font-semibold text-slate-900 mb-2 flex items-center">
-                <ShieldAlert className="w-5 h-5 mr-2 text-rose-500" />
-                AI Fraud Monitor
-              </h3>
-              <p className="text-sm text-slate-500 mb-4">Risk distribution across active requests.</p>
-              
-              <div className="space-y-4">
-                <div>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="text-rose-600 font-medium">High Risk (&gt;80)</span>
-                    <span className="font-bold text-slate-700">14</span>
-                  </div>
-                  <div className="w-full bg-slate-100 rounded-full h-2">
-                    <div className="bg-rose-500 h-2 rounded-full" style={{ width: '15%' }}></div>
-                  </div>
-                </div>
-                <div>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="text-amber-600 font-medium">Medium Risk (40-79)</span>
-                    <span className="font-bold text-slate-700">42</span>
-                  </div>
-                  <div className="w-full bg-slate-100 rounded-full h-2">
-                    <div className="bg-amber-500 h-2 rounded-full" style={{ width: '35%' }}></div>
-                  </div>
-                </div>
-                <div>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="text-emerald-600 font-medium">Low Risk (&lt;40)</span>
-                    <span className="font-bold text-slate-700">218</span>
-                  </div>
-                  <div className="w-full bg-slate-100 rounded-full h-2">
-                    <div className="bg-emerald-500 h-2 rounded-full" style={{ width: '80%' }}></div>
-                  </div>
-                </div>
-              </div>
+          {/* Table */}
+          {isLoading ? (
+            <div className="flex items-center justify-center py-16">
+              <div className="w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
             </div>
-            
-            <button className="w-full mt-6 py-2 bg-rose-50 text-rose-600 rounded-lg text-sm font-medium hover:bg-rose-100 transition">
-              Review High Risk Items
-            </button>
-          </div>
-        </div>
+          ) : filtered.length === 0 ? (
+            <div className="py-16 text-center">
+              <p className="text-gray-400 text-sm">No requests found.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-100 text-gray-500 font-semibold uppercase tracking-wide text-[10px]">
+                    <th className="px-5 py-3 text-left">Category</th>
+                    <th className="px-5 py-3 text-left">Amount</th>
+                    <th className="px-5 py-3 text-left">AI Score</th>
+                    <th className="px-5 py-3 text-left">Status</th>
+                    <th className="px-5 py-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {filtered.map((req) => {
+                    const isOpen = expanded === req.id;
+                    const fraud = req.fraud_score || 0;
+                    return (
+                      <React.Fragment key={req.id}>
+                        <tr
+                          className="hover:bg-gray-50 transition cursor-pointer"
+                          onClick={() => setExpanded(isOpen ? null : req.id)}
+                        >
+                          <td className="px-5 py-3.5">
+                            <div className="font-semibold text-gray-800 capitalize">
+                              {(req.category || '').replace(/_/g, ' ')}
+                            </div>
+                            <div className="text-[10px] text-gray-400 mt-0.5">{req.academic_year}</div>
+                          </td>
+                          <td className="px-5 py-3.5 font-bold text-gray-900">
+                            ₹{(req.amount || 0).toLocaleString()}
+                          </td>
+                          <td className="px-5 py-3.5">
+                            {req.verification_score ? (
+                              <span className={`text-[10px] font-semibold ${
+                                req.verification_score >= 80 ? 'text-emerald-600' :
+                                req.verification_score >= 50 ? 'text-amber-600' : 'text-red-600'
+                              }`}>
+                                {req.verification_score}/100
+                              </span>
+                            ) : (
+                              <span className="text-gray-400 text-[10px]">–</span>
+                            )}
+                          </td>
+                          <td className="px-5 py-3.5">
+                            <span className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-semibold capitalize ${STATUS_STYLES[req.status] || 'bg-gray-100 text-gray-600'}`}>
+                              {req.status}
+                            </span>
+                          </td>
+                          <td className="px-5 py-3.5 text-right" onClick={e => e.stopPropagation()}>
+                            <div className="flex items-center justify-end gap-2">
+                              {req.status === 'submitted' && (
+                                <button
+                                  onClick={() => handleVerify(req.id)}
+                                  disabled={verifyingId === req.id}
+                                  className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-semibold rounded-lg transition disabled:opacity-50"
+                                >
+                                  {verifyingId === req.id ? 'Running…' : 'Verify'}
+                                </button>
+                              )}
+                              <button
+                                onClick={() => navigate(`/status/${req.id}`)}
+                                className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition"
+                              >
+                                <Eye size={13} />
+                              </button>
+                              <button className="p-1.5 text-gray-400 hover:text-gray-700">
+                                {isOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
 
-        {/* Requests Table */}
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-          <div className="p-6 border-b border-slate-200 flex justify-between items-center">
-            <h3 className="text-lg font-semibold text-slate-900">Request Management</h3>
-            <div className="flex space-x-2">
-              <div className="relative">
-                <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" />
-                <input 
-                  type="text" 
-                  placeholder="Search requests..." 
-                  className="pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <button className="p-2 border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-50 transition">
-                <Filter className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-          
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm whitespace-nowrap">
-              <thead className="bg-slate-50 text-slate-600 border-b border-slate-200 font-medium">
-                <tr>
-                  <th className="px-6 py-3">Category</th>
-                  <th className="px-6 py-3">Amount</th>
-                  <th className="px-6 py-3">Due Date</th>
-                  <th className="px-6 py-3">AI Score</th>
-                  <th className="px-6 py-3">Status</th>
-                  <th className="px-6 py-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {requests.map((req) => (
-                  <tr key={req.id} className="hover:bg-slate-50 transition">
-                    <td className="px-6 py-4 font-medium text-slate-900">
-                      {req.category.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                    </td>
-                    <td className="px-6 py-4 text-slate-700">₹{req.amount.toLocaleString()}</td>
-                    <td className="px-6 py-4 text-slate-500">{new Date(req.deadline_date).toLocaleDateString()}</td>
-                    <td className="px-6 py-4">
-                      {req.verification_score ? (
-                        <div className="flex items-center space-x-2">
-                          <span className={`px-2 py-1 rounded text-xs font-bold ${
-                            req.verification_score > 80 ? 'bg-emerald-100 text-emerald-700' :
-                            req.verification_score > 50 ? 'bg-amber-100 text-amber-700' :
-                            'bg-rose-100 text-rose-700'
-                          }`}>
-                            {req.verification_score}/100
-                          </span>
-                        </div>
-                      ) : (
-                        <span className="text-slate-400 text-xs">Pending AI</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`px-2.5 py-1 rounded-full text-xs font-medium capitalize ${
-                        req.status === 'verified' ? 'bg-blue-100 text-blue-700' :
-                        req.status === 'submitted' ? 'bg-amber-100 text-amber-700' :
-                        'bg-slate-100 text-slate-700'
-                      }`}>
-                        {req.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex justify-end space-x-2">
-                        {req.status === 'submitted' && (
-                          <button onClick={() => handleVerify(req.id)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" title="Run AI Verification">
-                            <ShieldCheck className="w-4 h-4" />
-                          </button>
+                        {/* Expanded detail row */}
+                        {isOpen && (
+                          <tr className="bg-gray-50/60">
+                            <td colSpan={5} className="px-5 py-4 border-t border-gray-100">
+                              <div className="space-y-2 max-w-2xl">
+                                <p className="text-xs font-semibold text-gray-700">Description</p>
+                                <p className="text-xs text-gray-500 leading-relaxed">{req.description}</p>
+                                {fraud > 0 && (
+                                  <div className="flex items-center gap-2 pt-1">
+                                    <ShieldAlert size={12} className="text-red-400" />
+                                    <span className="text-[10px] text-red-500 font-medium">
+                                      Fraud Risk Score: {fraud}%
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
                         )}
-                        <button className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded" title="View Details">
-                          <Eye className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-                {requests.length === 0 && !loading && (
-                  <tr>
-                    <td colSpan="6" className="px-6 py-8 text-center text-slate-500">
-                      No requests found.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
       </main>
